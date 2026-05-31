@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { config } from "./config.js";
 import { closePool } from "./db/pool.js";
 import { router } from "./http/routes.js";
+import { mqttBridge } from "./mqtt/bridge.js";
 
 const app = express();
 
@@ -30,10 +31,12 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 const server = app.listen(config.PORT, () => {
   console.log(`Smart Home backend is listening on http://localhost:${config.PORT}`);
+  mqttBridge.start();
 });
 
 async function shutdown() {
   server.close(async () => {
+    await mqttBridge.stop();
     await closePool();
     process.exit(0);
   });

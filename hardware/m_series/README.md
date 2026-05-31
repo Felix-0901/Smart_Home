@@ -516,8 +516,37 @@ clear driver=SH1106
 
 測試結果：程式可正常燒錄並持續對 OLED `0x3C` 送出 SSD1306 / SH1106 測試畫面。此測試期間板子上跑的是 `oled_panel_check`，不是完整 Sensor 整合測試。
 
+## 正式整合韌體
+
+正式韌體：
+
+```text
+hardware/m_series/m_series.ino
+```
+
+此韌體整合 DHT22、GY-SGP30、MQ、火焰模組、ACS712、RGB LED 與 OLED，並輸出標準 `values` / `metadata` JSON。若存在 `config.h`，會透過 HTTP POST 上傳到：
+
+```text
+/api/series/m_series/readings
+```
+
+設定檔範本：
+
+```bash
+cp hardware/m_series/config.h.example hardware/m_series/config.h
+```
+
+`config.h` 會包含 WiFi 密碼與後端 token，已由 `.gitignore` 排除，不可提交。
+
+編譯：
+
+```bash
+arduino-cli compile --fqbn 'esp32:esp32:nodemcu-32s' hardware/m_series
+```
+
 ## 變更紀錄
 
+- 2026-06-01：新增正式整合韌體 `m_series.ino` 與 `config.h.example`，整合 Sensor、RGB、OLED、ACS712 與 HTTP readings 上傳欄位；尚未進行硬體實測。
 - 2026-05-31：新增 M 系列 Sensor 測試規劃與 `sensor_read_test`，先測 DHT22、GY-SGP30、MQ、火焰模組與 ACS712，不控制 RGB。
 - 2026-05-31：完成第一次 M 系列 Sensor 實測紀錄；DHT22、MQ、火焰模組有讀值，GY-SGP30 I2C 未偵測到；ACS712 尚未接線，後續忽略 `current_raw` / `current_voltage` 浮接讀值。
 - 2026-05-31：新增 M 系列最小化 I2C 掃描測試 `i2c_21_22_scan`，用來直接確認 GY-SGP30 是否在 `GPIO21` / `GPIO22` 回應 `0x58`。

@@ -7,23 +7,46 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      mosquitto:
+        condition: service_started
     environment:
+      TZ: Asia/Taipei
+      PGTZ: Asia/Taipei
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER:-smart_home}:${POSTGRES_PASSWORD:-smart_home_password}@postgres:5432/${POSTGRES_DB:-smart_home}
       DEVICE_API_TOKEN: ${DEVICE_API_TOKEN:-local-dev-device-token}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3003}
+      MQTT_ENABLED: ${MQTT_ENABLED:-true}
+      MQTT_BROKER_URL: ${MQTT_BROKER_URL:-mqtt://mosquitto:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:-}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+      MQTT_TOPIC_PREFIX: ${MQTT_TOPIC_PREFIX:-smart-home}
     ports:
       - "${BACKEND_PORT:-3003}:3000"
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: smart_home_mosquitto
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Taipei
+    ports:
+      - "${MQTT_PORT:-1883}:1883"
+    volumes:
+      - ./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
 
   postgres:
     image: postgres:16-alpine
     container_name: smart_home_postgres
     restart: unless-stopped
     environment:
+      TZ: Asia/Taipei
+      PGTZ: Asia/Taipei
       POSTGRES_DB: ${POSTGRES_DB:-smart_home}
       POSTGRES_USER: ${POSTGRES_USER:-smart_home}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smart_home_password}
+    command: ["postgres", "-c", "timezone=Asia/Taipei"]
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -41,6 +64,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    environment:
+      TZ: Asia/Taipei
     ports:
       - "${ADMINER_PORT:-8080}:8080"
 

@@ -18,6 +18,7 @@
 
 - 後端：放在 `backend/`，預計使用 Node.js + TypeScript API 服務
 - 資料庫：PostgreSQL
+- MQTT：Mosquitto，供 P 系列智慧插座接收開關指令與回報狀態
 - 本地測試：Docker Compose，包含後端 API、PostgreSQL、Adminer
 - 資料庫檢視：Adminer、Docker 內建 `psql`
 - 硬體韌體：放在 `hardware/`，後續依板子型號選擇 Arduino CLI、PlatformIO 或廠商工具
@@ -29,7 +30,9 @@
 ├── AGENTS.md
 ├── README.md
 ├── backend/
+├── docs/
 ├── hardware/
+├── infra/
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -97,6 +100,8 @@ Password: smart_home_password
 Database: smart_home
 ```
 
+時間欄位使用台灣時間 `Asia/Taipei` 顯示。`received_at` 保留 PostgreSQL 的 `TIMESTAMPTZ` 型別，方便正確排序與比較；本地 Docker 與後端連線會把時區設為 `Asia/Taipei`，所以查詢時會看到 `+08`。
+
 ## 環境變數
 
 環境變數範本放在 `.env.example`。目前 Docker Compose 已設定預設值，所以沒有 `.env` 也可以啟動。
@@ -129,4 +134,5 @@ https://你的固定 API domain/api/series/{seriesKey}/readings
 ## 前端 / 後端詳細文件連結
 
 - [後端文件](backend/README.md)
+- [整合規劃文件](docs/README.md)
 - [硬體文件](hardware/README.md)

@@ -4,261 +4,324 @@
 #include <Wire.h>
 #include <DHT.h>
 #include <Adafruit_SGP30.h>
+
+#if __has_include("config.h")
 #include "config.h"
+#define SMART_HOME_HAS_CONFIG 1
+#else
+#define SMART_HOME_HAS_CONFIG 0
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
+#define API_URL ""
+#define DEVICE_API_TOKEN ""
+#define DEVICE_ID "k-series-001"
+#endif
+
+#ifndef DEVICE_ID
+#define DEVICE_ID "k-series-001"
+#endif
 
 const char *SERIES_KEY = "k_series";
-const char *FIRMWARE_VERSION = "0.1.0";
+const char *FIRMWARE_VERSION = "0.3.0";
 
 constexpr uint8_t DHT_PIN = 4;
 constexpr uint8_t DHT_TYPE = DHT22;
-
 constexpr uint8_t I2C_SDA_PIN = 21;
 constexpr uint8_t I2C_SCL_PIN = 22;
-
-constexpr uint8_t MQ_ANALOG_PIN = 34;
+constexpr uint8_t MQ_ANALOG_PIN = 33;
 constexpr uint8_t MQ_DIGITAL_PIN = 25;
-
 constexpr uint8_t FLAME_ANALOG_PIN = 35;
 constexpr uint8_t FLAME_DIGITAL_PIN = 26;
-
 constexpr uint8_t RGB_RED_PIN = 16;
 constexpr uint8_t RGB_GREEN_PIN = 17;
 constexpr uint8_t RGB_BLUE_PIN = 18;
 constexpr bool RGB_COMMON_ANODE = false;
-
 constexpr uint8_t RED_CHANNEL = 0;
 constexpr uint8_t GREEN_CHANNEL = 1;
 constexpr uint8_t BLUE_CHANNEL = 2;
 constexpr uint32_t PWM_FREQUENCY = 5000;
 constexpr uint8_t PWM_RESOLUTION = 8;
-
-constexpr uint8_t STATUS_LED_PIN = 2;
-constexpr unsigned long SEND_INTERVAL_MS = 10000;
-constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 20000;
-constexpr int MQ_ANALOG_FAULT_RAW_MAX = 5;
+constexpr float ADC_MAX = 4095.0;
+constexpr float ESP32_ADC_VOLTAGE = 3.3;
+constexpr int MQ_ANALOG_DISCONNECTED_RAW = 0;
+constexpr unsigned long LOOP_INTERVAL_MS = 10000;
+constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;
 
 DHT dht(DHT_PIN, DHT_TYPE);
 Adafruit_SGP30 sgp30;
 bool sgp30Available = false;
+bool lastUploadOk = false;
+bool lastNetworkOk = false;
 
-unsigned long lastSendAt = 0;
-bool lastDhtOk = false;
-bool lastSgp30Ok = false;
-bool lastMqAnalogOk = false;
-bool lastGasDetected = false;
-bool lastFlameDetected = false;
+struct SensorReading {
+  bool dhtOk;
+  float temperatureC;
+  float humidityPercent;
+  float heatIndexC;
+  bool sgp30Ok;
+  uint16_t eco2Ppm;
+  uint16_t tvocPpb;
+  int mqRaw;
+  float mqVoltage;
+  int mqDo;
+  bool mqAnalogOk;
+  bool gasDetected;
+  int flameRaw;
+  float flameVoltage;
+  int flameDo;
+  bool flameDetected;
+  const char *rgbStatus;
+};
 
 uint8_t ledValue(uint8_t value) {
   return RGB_COMMON_ANODE ? 255 - value : value;
 }
 
 void setRgb(uint8_t red, uint8_t green, uint8_t blue) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(RGB_RED_PIN, ledValue(red));
+  ledcWrite(RGB_GREEN_PIN, ledValue(green));
+  ledcWrite(RGB_BLUE_PIN, ledValue(blue));
+#else
   ledcWrite(RED_CHANNEL, ledValue(red));
   ledcWrite(GREEN_CHANNEL, ledValue(green));
   ledcWrite(BLUE_CHANNEL, ledValue(blue));
+#endif
 }
 
 void setupRgb() {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(RGB_RED_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
+  ledcAttach(RGB_GREEN_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
+  ledcAttach(RGB_BLUE_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
+#else
   ledcSetup(RED_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcSetup(GREEN_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcSetup(BLUE_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
-
   ledcAttachPin(RGB_RED_PIN, RED_CHANNEL);
   ledcAttachPin(RGB_GREEN_PIN, GREEN_CHANNEL);
   ledcAttachPin(RGB_BLUE_PIN, BLUE_CHANNEL);
-
-  setRgb(0, 0, 255);
+#endif
 }
 
-void updateStatusRgb(bool uploadOk, bool networkOk) {
-  if (lastFlameDetected) {
-    setRgb(255, 0, 0);
-    return;
-  }
-
-  if (lastGasDetected) {
-    setRgb(255, 180, 0);
-    return;
-  }
-
-  if (!lastDhtOk || !lastSgp30Ok || !lastMqAnalogOk) {
-    setRgb(180, 0, 255);
-    return;
-  }
-
-  if (!networkOk) {
-    setRgb(0, 255, 255);
-    return;
-  }
-
-  if (!uploadOk) {
-    setRgb(255, 255, 255);
-    return;
-  }
-
+void runRgbSelfTest() {
+  setRgb(255, 0, 0);
+  delay(250);
   setRgb(0, 255, 0);
+  delay(250);
+  setRgb(0, 0, 255);
+  delay(250);
+  setRgb(255, 255, 255);
+  delay(250);
+  setRgb(0, 0, 0);
 }
 
-void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) {
-    return;
-  }
-
-  setRgb(0, 0, 255);
-  Serial.printf("Connecting to WiFi: %s\n", WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  unsigned long startedAt = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - startedAt < WIFI_CONNECT_TIMEOUT_MS) {
-    digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
-    delay(500);
-    Serial.print(".");
-  }
-
-  if (WiFi.status() != WL_CONNECTED) {
-    digitalWrite(STATUS_LED_PIN, LOW);
-    setRgb(0, 255, 255);
-    Serial.println("\nWiFi connection timed out.");
-    return;
-  }
-
-  digitalWrite(STATUS_LED_PIN, HIGH);
-  Serial.printf("\nWiFi connected. IP: %s\n", WiFi.localIP().toString().c_str());
+float adcToVoltage(int raw) {
+  return raw * ESP32_ADC_VOLTAGE / ADC_MAX;
 }
 
 void appendNumberOrNull(String &json, const char *key, float value, uint8_t decimals = 2) {
   json += "\"";
   json += key;
   json += "\":";
-
-  if (isnan(value)) {
-    json += "null";
-    return;
-  }
-
-  json += String(value, decimals);
+  json += isnan(value) ? "null" : String(value, decimals);
 }
 
-String buildPayload() {
-  float dhtHumidity = dht.readHumidity();
-  float dhtTemperature = dht.readTemperature();
-  float heatIndex = dht.computeHeatIndex(dhtTemperature, dhtHumidity, false);
-  lastDhtOk = !isnan(dhtHumidity) && !isnan(dhtTemperature);
+void appendBool(String &json, const char *key, bool value) {
+  json += "\"";
+  json += key;
+  json += "\":";
+  json += value ? "true" : "false";
+}
 
-  int mqAnalog = analogRead(MQ_ANALOG_PIN);
-  int mqDigitalLevel = digitalRead(MQ_DIGITAL_PIN);
-  int flameAnalog = analogRead(FLAME_ANALOG_PIN);
-  int flameDigitalLevel = digitalRead(FLAME_DIGITAL_PIN);
-  lastGasDetected = mqDigitalLevel == LOW;
-  lastFlameDetected = flameDigitalLevel == LOW;
-  lastMqAnalogOk = mqAnalog > MQ_ANALOG_FAULT_RAW_MAX;
+SensorReading readSensors() {
+  SensorReading reading{};
+  reading.humidityPercent = dht.readHumidity();
+  reading.temperatureC = dht.readTemperature();
+  reading.heatIndexC = dht.computeHeatIndex(reading.temperatureC, reading.humidityPercent, false);
+  reading.dhtOk = !isnan(reading.humidityPercent) && !isnan(reading.temperatureC);
 
-  String json = "{";
-  json += "\"values\":{";
-  appendNumberOrNull(json, "temperature_c", dhtTemperature);
-  json += ",";
-  appendNumberOrNull(json, "humidity_percent", dhtHumidity);
-  json += ",";
-  appendNumberOrNull(json, "heat_index_c", heatIndex);
-  json += ",";
+  reading.mqRaw = analogRead(MQ_ANALOG_PIN);
+  reading.mqVoltage = adcToVoltage(reading.mqRaw);
+  reading.mqDo = digitalRead(MQ_DIGITAL_PIN);
+  reading.mqAnalogOk = reading.mqRaw != MQ_ANALOG_DISCONNECTED_RAW;
+  reading.gasDetected = reading.mqDo == LOW;
 
-  lastSgp30Ok = sgp30Available && sgp30.IAQmeasure();
-  if (lastSgp30Ok) {
-    json += "\"eco2_ppm\":";
-    json += sgp30.eCO2;
-    json += ",\"tvoc_ppb\":";
-    json += sgp30.TVOC;
-    json += ",";
+  reading.flameRaw = analogRead(FLAME_ANALOG_PIN);
+  reading.flameVoltage = adcToVoltage(reading.flameRaw);
+  reading.flameDo = digitalRead(FLAME_DIGITAL_PIN);
+  reading.flameDetected = reading.flameDo == LOW;
+
+  reading.sgp30Ok = sgp30Available && sgp30.IAQmeasure();
+  if (reading.sgp30Ok) {
+    reading.eco2Ppm = sgp30.eCO2;
+    reading.tvocPpb = sgp30.TVOC;
   }
 
-  json += "\"gas_raw\":";
-  json += mqAnalog;
-  json += ",\"gas_analog_ok\":";
-  json += lastMqAnalogOk ? "true" : "false";
-  json += ",\"gas_digital_level\":";
-  json += mqDigitalLevel;
-  json += ",\"gas_detected\":";
-  json += mqDigitalLevel == LOW ? "true" : "false";
-  json += ",\"flame_raw\":";
-  json += flameAnalog;
-  json += ",\"flame_digital_level\":";
-  json += flameDigitalLevel;
-  json += ",\"flame_detected\":";
-  json += flameDigitalLevel == LOW ? "true" : "false";
-  json += ",\"wifi_rssi\":";
-  json += WiFi.RSSI();
-  json += "},";
+  return reading;
+}
 
-  json += "\"metadata\":{";
+const char *evaluateStatus(SensorReading &reading, bool networkOk, bool uploadOk) {
+  const bool sensorError = !reading.dhtOk || !reading.sgp30Ok || !reading.mqAnalogOk;
+
+  if (reading.flameDetected) {
+    setRgb(255, 0, 0);
+    return "red_flame_warning";
+  }
+
+  if (reading.gasDetected) {
+    setRgb(255, 180, 0);
+    return "yellow_gas_warning";
+  }
+
+  if (sensorError) {
+    setRgb(180, 0, 255);
+    return "purple_sensor_error";
+  }
+
+  if (!networkOk) {
+    setRgb(0, 255, 255);
+    return "cyan_network_offline";
+  }
+
+  if (!uploadOk) {
+    setRgb(255, 255, 255);
+    return "white_backend_error";
+  }
+
+  setRgb(0, 255, 0);
+  return "green_normal";
+}
+
+String buildPayload(const SensorReading &reading) {
+  String json = "{";
+  json += "\"values\":{";
+  appendBool(json, "dht_ok", reading.dhtOk);
+  json += ",";
+  appendNumberOrNull(json, "temperature_c", reading.dhtOk ? reading.temperatureC : NAN);
+  json += ",";
+  appendNumberOrNull(json, "humidity_percent", reading.dhtOk ? reading.humidityPercent : NAN);
+  json += ",";
+  appendNumberOrNull(json, "heat_index_c", reading.dhtOk ? reading.heatIndexC : NAN);
+  json += ",";
+  appendBool(json, "sgp30_ok", reading.sgp30Ok);
+  json += ",\"eco2_ppm\":";
+  json += reading.sgp30Ok ? String(reading.eco2Ppm) : "null";
+  json += ",\"tvoc_ppb\":";
+  json += reading.sgp30Ok ? String(reading.tvocPpb) : "null";
+  json += ",\"mq_raw\":";
+  json += reading.mqRaw;
+  json += ",\"mq_voltage\":";
+  json += String(reading.mqVoltage, 3);
+  json += ",";
+  appendBool(json, "mq_analog_ok", reading.mqAnalogOk);
+  json += ",\"mq_do\":";
+  json += reading.mqDo;
+  json += ",";
+  appendBool(json, "gas_detected", reading.gasDetected);
+  json += ",\"flame_raw\":";
+  json += reading.flameRaw;
+  json += ",\"flame_voltage\":";
+  json += String(reading.flameVoltage, 3);
+  json += ",\"flame_do\":";
+  json += reading.flameDo;
+  json += ",";
+  appendBool(json, "flame_detected", reading.flameDetected);
+  json += ",\"wifi_rssi\":";
+  json += WiFi.status() == WL_CONNECTED ? String(WiFi.RSSI()) : "null";
+  json += ",";
+  appendBool(json, "network_ok", lastNetworkOk);
+  json += ",";
+  appendBool(json, "upload_ok", lastUploadOk);
+  json += ",\"rgb_status\":\"";
+  json += reading.rgbStatus;
+  json += "\"},\"metadata\":{";
   json += "\"series_key\":\"";
   json += SERIES_KEY;
+  json += "\",\"device_id\":\"";
+  json += DEVICE_ID;
   json += "\",\"board\":\"mh_et_live_esp32_minikit\",";
   json += "\"firmware_version\":\"";
   json += FIRMWARE_VERSION;
-  json += "\",\"sgp30_available\":";
-  json += sgp30Available ? "true" : "false";
+  json += "\",\"transport\":\"http\",";
+  json += "\"source\":\"firmware\"";
   json += "}}";
-
   return json;
 }
 
-void sendReading() {
-  String payload = buildPayload();
-  connectWiFi();
+bool connectWiFi() {
+  if (!SMART_HOME_HAS_CONFIG || strlen(WIFI_SSID) == 0) {
+    return false;
+  }
 
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Skipping POST because WiFi is not connected.");
-    Serial.println(payload);
-    updateStatusRgb(false, false);
-    return;
+  if (WiFi.status() == WL_CONNECTED) {
+    return true;
+  }
+
+  setRgb(0, 0, 255);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  const unsigned long startedAt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startedAt < WIFI_CONNECT_TIMEOUT_MS) {
+    delay(300);
+  }
+
+  return WiFi.status() == WL_CONNECTED;
+}
+
+bool sendReading(const String &payload) {
+  if (!connectWiFi() || strlen(API_URL) == 0) {
+    return false;
   }
 
   HTTPClient http;
-  setRgb(0, 0, 255);
-
-  Serial.println(payload);
-
   http.begin(API_URL);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("x-device-token", DEVICE_API_TOKEN);
-
-  int statusCode = http.POST(payload);
-  String response = http.getString();
-
+  const int statusCode = http.POST(payload);
   Serial.printf("POST status: %d\n", statusCode);
-  Serial.println(response);
-  updateStatusRgb(statusCode >= 200 && statusCode < 300, true);
-
+  Serial.println(http.getString());
   http.end();
+
+  return statusCode >= 200 && statusCode < 300;
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  pinMode(STATUS_LED_PIN, OUTPUT);
   setupRgb();
+  runRgbSelfTest();
+
   pinMode(MQ_DIGITAL_PIN, INPUT);
   pinMode(FLAME_DIGITAL_PIN, INPUT);
-
   analogReadResolution(12);
   analogSetPinAttenuation(MQ_ANALOG_PIN, ADC_11db);
   analogSetPinAttenuation(FLAME_ANALOG_PIN, ADC_11db);
 
   dht.begin();
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-
   sgp30Available = sgp30.begin();
 
-  Serial.printf("SGP30 sensor available: %s\n", sgp30Available ? "yes" : "no");
-  sendReading();
-  lastSendAt = millis();
+  Serial.println();
+  Serial.println("K series firmware");
+  Serial.printf("Series: %s, device: %s, firmware: %s\n", SERIES_KEY, DEVICE_ID, FIRMWARE_VERSION);
+  Serial.printf("SGP30 available: %s\n", sgp30Available ? "yes" : "no");
 }
 
 void loop() {
-  if (millis() - lastSendAt >= SEND_INTERVAL_MS) {
-    sendReading();
-    lastSendAt = millis();
-  }
+  SensorReading reading = readSensors();
+  reading.rgbStatus = "blue_transient";
+  setRgb(0, 0, 255);
+
+  String payload = buildPayload(reading);
+  Serial.println(payload);
+
+  lastNetworkOk = WiFi.status() == WL_CONNECTED || connectWiFi();
+  lastUploadOk = sendReading(payload);
+  reading.rgbStatus = evaluateStatus(reading, lastNetworkOk, lastUploadOk);
+  Serial.printf("rgb_status=%s, network_ok=%s, upload_ok=%s\n", reading.rgbStatus, lastNetworkOk ? "true" : "false", lastUploadOk ? "true" : "false");
+
+  delay(LOOP_INTERVAL_MS);
 }

@@ -2,13 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { config } from "../config.js";
 import { pool } from "../db/pool.js";
-import {
-  createBaseSchema,
-  ensureSeriesTable,
-  quoteIdentifier,
-  tableNameForSeries,
-  validateSeriesKey
-} from "../db/schema.js";
+import { tableNameForSeries, validateSeriesKey } from "../db/schema.js";
+import { mqttBridge } from "../mqtt/bridge.js";
+import { getLatestDeviceReading, insertSeriesReading } from "../services/readings.js";
 import { requireDeviceToken } from "./auth.js";
 
 const readingSchema = z.object({
@@ -16,11 +12,20 @@ const readingSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional()
 });
 
+const relayCommandSchema = z.object({
+  relay_on: z.boolean()
+});
+
+const deviceIdSchema = z.string().regex(
+  /^[a-z0-9][a-z0-9_-]{0,63}$/,
+  "deviceId must use lowercase letters, numbers, hyphens, or underscores"
+);
+
 export const router = Router();
 
 router.get("/health", async (_req, res, next) => {
   try {
-    const result = await pool.query("SELECT now() AS database_time;");
+    const result = await pool.query("SELECT now()::text AS database_time;");
     res.json({
       ok: true,
       publicUrl: config.APP_PUBLIC_URL,
@@ -37,33 +42,49 @@ router.post("/api/series/:seriesKey/readings", requireDeviceToken, async (req, r
     validateSeriesKey(seriesKey);
 
     const body = readingSchema.parse(req.body);
-    const client = await pool.connect();
+    const result = await insertSeriesReading(seriesKey, body.values, body.metadata ?? {});
 
-    try {
-      await client.query("BEGIN");
-      await createBaseSchema(client);
-      await ensureSeriesTable(client, seriesKey);
+    res.status(201).json({
+      ok: true,
+      seriesKey,
+      table: tableNameForSeries(seriesKey),
+      reading: result.reading
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
-      const tableName = quoteIdentifier(tableNameForSeries(seriesKey));
-      const insertResult = await client.query(
-        `INSERT INTO ${tableName} (values, metadata) VALUES ($1, $2) RETURNING id, received_at;`,
-        [body.values, body.metadata ?? {}]
-      );
+router.post("/api/devices/:deviceId/relay", requireDeviceToken, async (req, res, next) => {
+  try {
+    const deviceId = deviceIdSchema.parse(req.params.deviceId);
+    const body = relayCommandSchema.parse(req.body);
+    const result = await mqttBridge.publishRelayCommand(deviceId, body.relay_on);
 
-      await client.query("COMMIT");
+    res.status(202).json({
+      ok: true,
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
-      res.status(201).json({
-        ok: true,
-        seriesKey,
-        table: tableNameForSeries(seriesKey),
-        reading: insertResult.rows[0]
-      });
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
+router.get("/api/devices/:deviceId/latest", requireDeviceToken, async (req, res, next) => {
+  try {
+    const deviceId = deviceIdSchema.parse(req.params.deviceId);
+    const seriesKey = z.string().default("p_series").parse(req.query.seriesKey);
+    const kind = z.string().optional().parse(req.query.kind);
+    validateSeriesKey(seriesKey);
+
+    const reading = await getLatestDeviceReading(seriesKey, deviceId, kind);
+
+    res.json({
+      ok: true,
+      deviceId,
+      seriesKey,
+      reading
+    });
   } catch (error) {
     next(error);
   }

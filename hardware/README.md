@@ -18,7 +18,11 @@
 ```text
 hardware/
 ├── README.md
-└── k_series/
+├── k_series/
+├── m_series/
+├── p_series/
+├── r_series/
+└── t_series/
 ```
 
 後續建議結構：
@@ -26,9 +30,9 @@ hardware/
 ```text
 hardware/
 ├── k_series/
-├── room-sensor/
-├── door-sensor/
-└── relay-controller/
+├── m_series/
+├── r_series/
+└── t_series/
 ```
 
 每個硬體子資料夾建議包含：
@@ -56,7 +60,25 @@ ls /dev/cu.*
 
 ## 建置 / 啟動方式
 
-尚未建立韌體專案。後續每組硬體需要在各自子資料夾補上編譯與燒錄指令。
+各系列的編譯、燒錄與監看方式記錄在各自 README：
+
+- [K 系列](k_series/README.md)
+- [M 系列](m_series/README.md)
+- [P 系列](p_series/README.md)
+- [R 系列](r_series/README.md)
+- [T 系列](t_series/README.md)
+
+跨系列的 Sensor 欄位、RGB 狀態燈、P 系列 MQTT 與後端整合方向記錄在：
+
+- [硬體系列整合規劃](../docs/hardware-integration-plan.md)
+
+目前正式韌體入口：
+
+- `k_series/k_series.ino`：K 系列 HTTP readings 韌體
+- `m_series/m_series.ino`：M 系列 HTTP readings + OLED 韌體
+- `p_series/p_series.ino`：P 系列 MQTT 智慧插座韌體
+- `r_series/r_series.ino`：R 系列 HTTP readings 韌體
+- `t_series/t_series.ino`：T 系列 HTTP readings 韌體
 
 ## 部署細節
 

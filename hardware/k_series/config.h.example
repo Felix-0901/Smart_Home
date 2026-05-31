@@ -4,4 +4,4 @@
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 #define API_URL "http://YOUR_MAC_LAN_IP:3003/api/series/k_series/readings"
 #define DEVICE_API_TOKEN "local-dev-device-token"
-
+#define DEVICE_ID "k-series-001"

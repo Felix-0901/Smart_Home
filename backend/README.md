@@ -74,9 +74,18 @@ DATABASE_URL=postgresql://smart_home:smart_home_password@localhost:5432/smart_ho
 DEVICE_API_TOKEN=local-dev-device-token
 CORS_ORIGIN=*
 APP_PUBLIC_URL=http://localhost:3003
+MQTT_ENABLED=true
+MQTT_BROKER_URL=mqtt://localhost:1883
+MQTT_USERNAME=
+MQTT_PASSWORD=
+MQTT_TOPIC_PREFIX=smart-home
+TZ=Asia/Taipei
+PGTZ=Asia/Taipei
 ```
 
 本地開發值放在 `backend/.env`。正式部署時請在 Coolify 設定正式值，不要提交正式 Token 或密碼。
+
+時間欄位使用 PostgreSQL `TIMESTAMPTZ`，本地 Docker 與後端連線預設以 `Asia/Taipei` 顯示。API 回傳的 `received_at` 會以文字格式保留 `+08` 時區，例如 `2026-05-16 01:23:45.123456+08`。
 
 ## 建置 / 啟動方式
 
@@ -139,6 +148,30 @@ curl -X POST http://localhost:3003/api/series/room_sensor/readings \
 series_{seriesKey}_readings
 ```
 
+P 系列智慧插座開關指令：
+
+```bash
+curl -X POST http://localhost:3003/api/devices/p-series-001/relay \
+  -H 'content-type: application/json' \
+  -H 'x-device-token: local-dev-device-token' \
+  -d '{"relay_on":true}'
+```
+
+後端會發布 retained MQTT command 到：
+
+```text
+smart-home/p_series/p-series-001/command
+```
+
+查詢某台設備最新資料：
+
+```bash
+curl 'http://localhost:3003/api/devices/p-series-001/latest?seriesKey=p_series' \
+  -H 'x-device-token: local-dev-device-token'
+```
+
+MQTT bridge 會訂閱 `state`、`telemetry` 與 `availability` topic，並寫入 `series_p_series_readings`。
+
 ## 部署細節
 
 後端已提供 `Dockerfile`，之後可部署到 Coolify。正式 domain 確認後，請在 Coolify 設定：
@@ -148,6 +181,10 @@ DATABASE_URL=正式 PostgreSQL 連線字串
 DEVICE_API_TOKEN=正式硬體上傳 token
 CORS_ORIGIN=https://App 或後台網域
 APP_PUBLIC_URL=https://固定 API domain
+MQTT_BROKER_URL=mqtt://你的 MQTT broker:1883
+MQTT_USERNAME=正式 MQTT 帳號或留空
+MQTT_PASSWORD=正式 MQTT 密碼或留空
+MQTT_TOPIC_PREFIX=smart-home
 ```
 
 ## 常見問題

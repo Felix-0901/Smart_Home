@@ -85,7 +85,7 @@
 - K 系列使用 `CP2104` USB-to-Serial，序列埠曾為 `/dev/cu.usbserial-020JE15F`
 - K 系列 pinout 以使用者提供的板子背面絲印為準，修正過原本不適用的 GPIO 假設
 - K 系列 Sensor 曾把 BME280 誤判為 GY-SGP30，後續修正為讀取 `eco2_ppm` 與 `tvoc_ppb`
-- K 系列 MQ 類比輸入曾因線材或接觸問題讀到 `0`，換線後 `AO -> IO34` 正常
+- K 系列 MQ 類比輸入曾因線材或接觸問題讀到 `0`；舊接線 `AO -> IO34` 可讀，但後續為改善封蓋穩定性改為 `AO -> IO33`
 - K 系列開發證明最穩定流程是：確認板型與 pinout、單一 Sensor 測試、記錄 README、整合測試、WiFi 上傳、資料庫查詢
 
 # README 管理

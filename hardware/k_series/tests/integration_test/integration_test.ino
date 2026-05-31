@@ -9,7 +9,7 @@ constexpr uint8_t DHT_TYPE = DHT22;
 constexpr uint8_t I2C_SDA_PIN = 21;
 constexpr uint8_t I2C_SCL_PIN = 22;
 
-constexpr uint8_t MQ_ANALOG_PIN = 34;
+constexpr uint8_t MQ_ANALOG_PIN = 33;
 constexpr uint8_t MQ_DIGITAL_PIN = 25;
 
 constexpr uint8_t FLAME_ANALOG_PIN = 35;
@@ -30,6 +30,7 @@ constexpr uint8_t PWM_RESOLUTION = 8;
 
 constexpr float ADC_MAX = 4095.0;
 constexpr float ESP32_ADC_VOLTAGE = 3.3;
+constexpr int MQ_ANALOG_DISCONNECTED_RAW = 0;
 
 DHT dht(DHT_PIN, DHT_TYPE);
 Adafruit_SGP30 sgp30;
@@ -40,12 +41,23 @@ uint8_t ledValue(uint8_t value) {
 }
 
 void setRgb(uint8_t red, uint8_t green, uint8_t blue) {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcWrite(RGB_RED_PIN, ledValue(red));
+  ledcWrite(RGB_GREEN_PIN, ledValue(green));
+  ledcWrite(RGB_BLUE_PIN, ledValue(blue));
+#else
   ledcWrite(RED_CHANNEL, ledValue(red));
   ledcWrite(GREEN_CHANNEL, ledValue(green));
   ledcWrite(BLUE_CHANNEL, ledValue(blue));
+#endif
 }
 
 void setupRgb() {
+#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
+  ledcAttach(RGB_RED_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
+  ledcAttach(RGB_GREEN_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
+  ledcAttach(RGB_BLUE_PIN, PWM_FREQUENCY, PWM_RESOLUTION);
+#else
   ledcSetup(RED_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcSetup(GREEN_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcSetup(BLUE_CHANNEL, PWM_FREQUENCY, PWM_RESOLUTION);
@@ -53,6 +65,7 @@ void setupRgb() {
   ledcAttachPin(RGB_RED_PIN, RED_CHANNEL);
   ledcAttachPin(RGB_GREEN_PIN, GREEN_CHANNEL);
   ledcAttachPin(RGB_BLUE_PIN, BLUE_CHANNEL);
+#endif
 
   setRgb(0, 0, 255);
 }
@@ -89,6 +102,7 @@ void loop() {
   int gasRaw = analogRead(MQ_ANALOG_PIN);
   int gasDigital = digitalRead(MQ_DIGITAL_PIN);
   float gasVoltage = gasRaw * ESP32_ADC_VOLTAGE / ADC_MAX;
+  bool gasAnalogOk = gasRaw != MQ_ANALOG_DISCONNECTED_RAW;
   bool gasDetected = gasDigital == LOW;
 
   int flameRaw = analogRead(FLAME_ANALOG_PIN);
@@ -107,7 +121,7 @@ void loop() {
     }
   }
 
-  bool sensorError = !dhtOk || !sgp30Available || !sgp30Ok;
+  bool sensorError = !dhtOk || !sgp30Available || !sgp30Ok || !gasAnalogOk;
 
   if (flameDetected) {
     setRgb(255, 0, 0);
@@ -132,6 +146,8 @@ void loop() {
   Serial.print(gasRaw);
   Serial.print(", gas_voltage=");
   Serial.print(gasVoltage, 3);
+  Serial.print(", gas_analog_ok=");
+  Serial.print(gasAnalogOk ? "true" : "false");
   Serial.print(", gas_do=");
   Serial.print(gasDigital);
   Serial.print(", gas_detected=");
