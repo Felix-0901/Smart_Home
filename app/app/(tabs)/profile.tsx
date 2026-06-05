@@ -9,6 +9,7 @@ import { Screen } from "../../src/shared/components/Screen";
 import { Section } from "../../src/shared/components/Section";
 import { SegmentedControl } from "../../src/shared/components/SegmentedControl";
 import { colors } from "../../src/theme/colors";
+import { layout } from "../../src/theme/layout";
 import { spacing } from "../../src/theme/spacing";
 import type { DeviceGroupMode } from "../../src/features/devices/device-groups";
 
@@ -103,7 +104,7 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screenContent: {
-    paddingBottom: spacing.xxl
+    paddingBottom: layout.tabScreenBottomPadding
   },
   preferenceRow: {
     padding: spacing.md,

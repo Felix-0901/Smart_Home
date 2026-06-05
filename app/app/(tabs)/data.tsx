@@ -37,6 +37,7 @@ import { Screen } from "../../src/shared/components/Screen";
 import { Section } from "../../src/shared/components/Section";
 import { SegmentedControl } from "../../src/shared/components/SegmentedControl";
 import { colors } from "../../src/theme/colors";
+import { layout } from "../../src/theme/layout";
 import { spacing } from "../../src/theme/spacing";
 import { typography } from "../../src/theme/typography";
 import type { Device, Reading, ReadingValue } from "../../src/types/api";
@@ -1071,7 +1072,7 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   screenContent: {
-    paddingBottom: spacing.xxl
+    paddingBottom: layout.tabScreenBottomPadding
   },
   queryPanel: {
     gap: spacing.md,

@@ -38,6 +38,7 @@ import { Section } from "../../src/shared/components/Section";
 import { SeriesBadge } from "../../src/shared/components/SeriesBadge";
 import { StatusDot } from "../../src/shared/components/StatusDot";
 import { colors } from "../../src/theme/colors";
+import { layout } from "../../src/theme/layout";
 import { spacing } from "../../src/theme/spacing";
 import { typography } from "../../src/theme/typography";
 import type { Device, House } from "../../src/types/api";
@@ -777,7 +778,7 @@ function PickerOption({
 
 const styles = StyleSheet.create({
   screenContent: {
-    paddingBottom: spacing.xxl
+    paddingBottom: layout.tabScreenBottomPadding
   },
   claimButton: {
     marginHorizontal: spacing.md,
