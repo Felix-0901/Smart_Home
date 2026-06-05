@@ -1,0 +1,151 @@
+import { useRouter } from "expo-router";
+import { useState } from "react";
+import { StyleSheet, Switch, View } from "react-native";
+import { API_BASE_URL } from "../../src/config/env";
+import { useAuth, getErrorMessage } from "../../src/features/auth/AuthContext";
+import { profileSecurityNote } from "../../src/features/profile/profile-model";
+import { Button } from "../../src/shared/components/Button";
+import { FormTextField } from "../../src/shared/components/FormTextField";
+import { ListRow } from "../../src/shared/components/ListRow";
+import { Screen } from "../../src/shared/components/Screen";
+import { Section } from "../../src/shared/components/Section";
+import { SegmentedControl } from "../../src/shared/components/SegmentedControl";
+import { colors } from "../../src/theme/colors";
+import { spacing } from "../../src/theme/spacing";
+import type { DeviceGroupMode } from "../../src/features/devices/device-groups";
+
+export default function ProfileScreen() {
+  const router = useRouter();
+  const {
+    user,
+    signOut,
+    updateProfile,
+    developerMode,
+    setDeveloperMode,
+    deviceGroupMode,
+    setDeviceGroupMode
+  } = useAuth();
+  const [displayName, setDisplayName] = useState(user?.displayName ?? "");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSaveProfile() {
+    setLoading(true);
+    setError(null);
+
+    try {
+      await updateProfile({ displayName });
+    } catch (saveError) {
+      setError(getErrorMessage(saveError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSignOut() {
+    setLoading(true);
+    try {
+      await signOut();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <Screen title="個人" subtitle="管理帳號資料、APP 連線設定與展示用狀態。" contentStyle={styles.screenContent}>
+      <Section title="帳號">
+        <ListRow title="Email" value={user?.email ?? "尚未登入"} />
+        <FormTextField
+          label="顯示名稱"
+          value={displayName}
+          onChangeText={setDisplayName}
+          placeholder="輸入顯示名稱"
+          error={error}
+        />
+        <ListRow
+          title="帳號管理"
+          subtitle="修改密碼或註銷帳號。"
+          icon="person-circle-outline"
+          onPress={() => router.push("/account")}
+        />
+      </Section>
+
+      <Button
+        title="儲存個人資料"
+        icon="checkmark-circle-outline"
+        onPress={handleSaveProfile}
+        loading={loading}
+        disabled={!displayName.trim()}
+        style={styles.primaryButton}
+      />
+
+      <Section title="生活空間">
+        <ListRow
+          title="房屋"
+          subtitle="管理房屋與每棟房屋底下的空間。"
+          icon="home-outline"
+          onPress={() => router.push("/houses")}
+        />
+      </Section>
+
+      <Section title="裝置顯示">
+        <View style={styles.preferenceRow}>
+          <SegmentedControl
+            value={deviceGroupMode}
+            options={[
+              { label: "系列", value: "series" },
+              { label: "空間", value: "space" }
+            ]}
+            onChange={(value) => void setDeviceGroupMode(value as DeviceGroupMode)}
+          />
+        </View>
+      </Section>
+
+      <Section title="系統">
+        <ListRow title="API 端點" subtitle={API_BASE_URL} icon="server-outline" />
+        <ListRow title="資料安全" subtitle={profileSecurityNote} icon="shield-checkmark-outline" />
+        <ListRow
+          title="開發者模式"
+          subtitle="開啟後，數據頁會顯示 raw、ADC、腳位與診斷欄位。"
+          icon="construct-outline"
+          trailing={
+            <Switch
+              accessibilityLabel="開發者模式"
+              value={developerMode}
+              onValueChange={(value) => void setDeveloperMode(value)}
+              trackColor={{ false: colors.surfaceSecondary, true: colors.primary }}
+              thumbColor={colors.surface}
+              ios_backgroundColor={colors.surfaceSecondary}
+            />
+          }
+        />
+      </Section>
+
+      <Section title="Sense AI 預覽功能">
+        <ListRow
+          title="智慧異常摘要"
+          subtitle="預留後續 features/insights，可用歷史資料產生展示互動與異常提醒。"
+          icon="sparkles-outline"
+        />
+      </Section>
+
+      <Section>
+        <ListRow title="登出" icon="log-out-outline" destructive onPress={() => void handleSignOut()} />
+      </Section>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  screenContent: {
+    paddingBottom: spacing.xxl
+  },
+  primaryButton: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.xl
+  },
+  preferenceRow: {
+    padding: spacing.md,
+    backgroundColor: colors.surface
+  }
+});

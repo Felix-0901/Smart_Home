@@ -5,6 +5,7 @@ import { pool } from "../db/pool.js";
 import { tableNameForSeries, validateSeriesKey } from "../db/schema.js";
 import { mqttBridge } from "../mqtt/bridge.js";
 import { getLatestDeviceReading, insertSeriesReading } from "../services/readings.js";
+import { appRouter } from "./app-routes.js";
 import { requireDeviceToken } from "./auth.js";
 
 const readingSchema = z.object({
@@ -22,6 +23,8 @@ const deviceIdSchema = z.string().regex(
 );
 
 export const router = Router();
+
+router.use("/api/app", appRouter);
 
 router.get("/health", async (_req, res, next) => {
   try {

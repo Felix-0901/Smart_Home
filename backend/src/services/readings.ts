@@ -60,6 +60,7 @@ export async function getLatestDeviceReading(seriesKey: string, deviceId: string
   }
 
   try {
+    await client.query("BEGIN");
     await createBaseSchema(client);
     await ensureSeriesTable(client, seriesKey);
 
@@ -75,7 +76,71 @@ export async function getLatestDeviceReading(seriesKey: string, deviceId: string
       params
     );
 
+    await client.query("COMMIT");
     return result.rows[0] ?? null;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getDeviceReadings(
+  seriesKey: string,
+  deviceId: string,
+  options: {
+    from?: string;
+    to?: string;
+    metric?: string;
+    limit?: number;
+  } = {}
+) {
+  validateSeriesKey(seriesKey);
+  const client = await pool.connect();
+
+  const tableName = quoteIdentifier(tableNameForSeries(seriesKey));
+  const params: Array<string | number> = [deviceId];
+  const filters = ["metadata->>'device_id' = $1"];
+
+  if (options.from) {
+    params.push(options.from);
+    filters.push(`received_at >= $${params.length}::timestamptz`);
+  }
+
+  if (options.to) {
+    params.push(options.to);
+    filters.push(`received_at <= $${params.length}::timestamptz`);
+  }
+
+  if (options.metric) {
+    params.push(options.metric);
+    filters.push(`values ? $${params.length}`);
+  }
+
+  params.push(Math.min(Math.max(options.limit ?? 100, 1), 500));
+
+  try {
+    await client.query("BEGIN");
+    await createBaseSchema(client);
+    await ensureSeriesTable(client, seriesKey);
+
+    const result = await client.query(
+      `
+        SELECT id, values, metadata, received_at::text AS received_at
+        FROM ${tableName}
+        WHERE ${filters.join(" AND ")}
+        ORDER BY received_at DESC, id DESC
+        LIMIT $${params.length};
+      `,
+      params
+    );
+
+    await client.query("COMMIT");
+    return result.rows;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }

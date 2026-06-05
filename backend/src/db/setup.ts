@@ -5,8 +5,13 @@ async function main() {
   const client = await pool.connect();
 
   try {
+    await client.query("BEGIN");
     await createBaseSchema(client);
+    await client.query("COMMIT");
     console.log("Database schema is ready.");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
     await closePool();

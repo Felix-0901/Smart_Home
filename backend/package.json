@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "db:setup": "tsx src/db/setup.ts",
     "db:check": "tsx src/db/check.ts",
-    "db:create-series": "tsx src/db/create-series.ts"
+    "db:create-series": "tsx src/db/create-series.ts",
+    "db:seed-demo-devices": "tsx src/db/seed-demo-devices.ts"
   },
   "keywords": [],
   "author": "",

@@ -17,6 +17,9 @@ services:
       DEVICE_API_TOKEN: ${DEVICE_API_TOKEN:-local-dev-device-token}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3003}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:-local-dev-app-jwt-secret-change-me-32chars}
+      APP_ACCESS_TOKEN_TTL_SECONDS: ${APP_ACCESS_TOKEN_TTL_SECONDS:-900}
+      APP_REFRESH_TOKEN_TTL_DAYS: ${APP_REFRESH_TOKEN_TTL_DAYS:-30}
       MQTT_ENABLED: ${MQTT_ENABLED:-true}
       MQTT_BROKER_URL: ${MQTT_BROKER_URL:-mqtt://mosquitto:1883}
       MQTT_USERNAME: ${MQTT_USERNAME:-}
