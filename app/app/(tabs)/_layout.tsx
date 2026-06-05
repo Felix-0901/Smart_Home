@@ -5,6 +5,7 @@ import {
   Animated,
   Easing,
   Keyboard,
+  LayoutAnimation,
   Platform,
   Pressable,
   ScrollView,
@@ -13,7 +14,8 @@ import {
   TextInput,
   useWindowDimensions,
   View,
-  type GestureResponderEvent
+  type GestureResponderEvent,
+  type LayoutChangeEvent
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
@@ -105,6 +107,33 @@ const assistantRainbowPalette = [
 const assistantRainbowSegmentCount = 168;
 const assistantRainbowFrameMs = 48;
 const assistantRainbowCycleMs = 4200;
+const assistantCollapsedShellHeight = 70;
+const assistantBaseExpandedShellHeight = 198;
+const assistantDockBottom = 74;
+const assistantDockTopPadding = 24;
+const assistantRootClearance = 26;
+const assistantInputMinFrameHeight = 56;
+const assistantInputMinTextHeight = 40;
+const assistantInputMaxTextHeight = 104;
+const assistantInputMaxFrameRadius = 32;
+const assistantInputHorizontalPadding = 12;
+const assistantInputLineHeight = 22;
+const assistantInputVerticalPadding = 10;
+const assistantInputSingleLineTolerance = 8;
+const assistantInputHeightAnimation = {
+  duration: 150,
+  create: {
+    property: LayoutAnimation.Properties.opacity,
+    type: LayoutAnimation.Types.easeInEaseOut
+  },
+  update: {
+    type: LayoutAnimation.Types.easeInEaseOut
+  },
+  delete: {
+    property: LayoutAnimation.Properties.opacity,
+    type: LayoutAnimation.Types.easeInEaseOut
+  }
+} as const;
 
 export default function TabsLayout() {
   return (
@@ -153,8 +182,13 @@ function PillTabBar({ state, navigation }: TabBarProps) {
   const effectiveBottomOffset = bottomOffset + (assistantFocused ? keyboardHeight : 0);
   const pillWidth = width - 24;
   const [notchProgress, setNotchProgress] = useState(assistantFocused ? 1 : 0);
+  const [assistantDockHeight, setAssistantDockHeight] = useState(100);
   const expansionProgress = useRef(new Animated.Value(assistantFocused ? 1 : 0)).current;
   const dropletProgress = useRef(new Animated.Value(assistantFocused ? 1 : 0)).current;
+  const expandedShellHeight = Math.max(
+    assistantBaseExpandedShellHeight,
+    assistantDockBottom + assistantDockHeight + assistantDockTopPadding
+  );
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -243,11 +277,11 @@ function PillTabBar({ state, navigation }: TabBarProps) {
 
   const rootHeight = expansionProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [bottomOffset + 96, effectiveBottomOffset + 224]
+    outputRange: [bottomOffset + 96, effectiveBottomOffset + expandedShellHeight + assistantRootClearance]
   });
   const shellHeight = expansionProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [70, 198]
+    outputRange: [assistantCollapsedShellHeight, expandedShellHeight]
   });
   const panelOpacity = expansionProgress.interpolate({
     inputRange: [0, 0.42, 1],
@@ -298,6 +332,7 @@ function PillTabBar({ state, navigation }: TabBarProps) {
           <AssistantDock
             interactive={assistantFocused}
             morphProgress={dropletProgress}
+            onContentHeightChange={setAssistantDockHeight}
             progress={expansionProgress}
           />
         ) : null}
@@ -399,15 +434,25 @@ function PillTabBar({ state, navigation }: TabBarProps) {
 function AssistantDock({
   interactive,
   morphProgress,
+  onContentHeightChange,
   progress
 }: {
   interactive: boolean;
   morphProgress: Animated.Value;
+  onContentHeightChange: (height: number) => void;
   progress: Animated.Value;
 }) {
   const { inputValue, sendMessage, setInputValue } = useAssistantChat();
   const { width } = useWindowDimensions();
+  const [inputFrameHeight, setInputFrameHeight] = useState(assistantInputMinFrameHeight);
+  const [inputAvailableWidth, setInputAvailableWidth] = useState(0);
+  const [inputTextHeight, setInputTextHeight] = useState(assistantInputMinTextHeight);
   const inputFrameWidth = width - 24 - spacing.md * 2;
+  const inputFrameRadius = Math.min(
+    assistantInputMaxFrameRadius,
+    Math.max(assistantInputMinFrameHeight / 2, inputFrameHeight / 2)
+  );
+  const inputSurfaceRadius = Math.max(18, inputFrameRadius - 3);
   const dockOpacity = progress.interpolate({
     inputRange: [0, 0.28, 1],
     outputRange: [0, 1, 1]
@@ -441,8 +486,50 @@ function AssistantDock({
     outputRange: [10, 0]
   });
 
+  useEffect(() => {
+    if (!inputValue) {
+      updateInputTextHeight(assistantInputMinTextHeight);
+    }
+  }, [inputValue]);
+
+  function handleDockLayout(event: LayoutChangeEvent) {
+    const nextHeight = Math.ceil(event.nativeEvent.layout.height);
+    onContentHeightChange(nextHeight);
+  }
+
+  function handleInputFrameLayout(event: LayoutChangeEvent) {
+    const nextHeight = Math.max(
+      assistantInputMinFrameHeight,
+      Math.ceil(event.nativeEvent.layout.height)
+    );
+
+    setInputFrameHeight((currentHeight) =>
+      Math.abs(currentHeight - nextHeight) > 1 ? nextHeight : currentHeight
+    );
+  }
+
+  function handleInputMeasureLayout(event: LayoutChangeEvent) {
+    if (!inputValue) {
+      return;
+    }
+
+    updateInputTextHeight(normalizeInputTextHeight(event.nativeEvent.layout.height));
+  }
+
+  function updateInputTextHeight(nextHeight: number) {
+    setInputTextHeight((currentHeight) => {
+      if (Math.abs(currentHeight - nextHeight) <= 1) {
+        return currentHeight;
+      }
+
+      LayoutAnimation.configureNext(assistantInputHeightAnimation);
+      return nextHeight;
+    });
+  }
+
   return (
     <Animated.View
+      onLayout={handleDockLayout}
       pointerEvents={interactive ? "box-none" : "none"}
       style={[
         styles.assistantDock,
@@ -482,12 +569,16 @@ function AssistantDock({
         </ScrollView>
       </Animated.View>
 
-      <View style={styles.assistantInputFrame}>
+      <View
+        onLayout={handleInputFrameLayout}
+        style={[styles.assistantInputFrame, { borderRadius: inputFrameRadius }]}
+      >
         <Animated.View
           pointerEvents="none"
           style={[
             styles.assistantInputOutline,
             {
+              borderRadius: inputFrameRadius,
               opacity: outlineOpacity,
               transform: [
                 { scaleX: outlineScaleX },
@@ -496,18 +587,49 @@ function AssistantDock({
             }
           ]}
         >
-          <AssistantRainbowBorder width={inputFrameWidth} />
-          <View style={styles.assistantInputSurface} />
+          <AssistantRainbowBorder
+            height={inputFrameHeight}
+            radius={inputSurfaceRadius + 1}
+            width={inputFrameWidth}
+          />
+          <View style={[styles.assistantInputSurface, { borderRadius: inputSurfaceRadius }]} />
         </Animated.View>
-        <Animated.View style={[styles.assistantInputContent, { opacity: inputContentOpacity }]}>
+        <Animated.View
+          style={[
+            styles.assistantInputContent,
+            {
+              borderRadius: inputFrameRadius,
+              opacity: inputContentOpacity
+            }
+          ]}
+        >
+          {inputAvailableWidth > 0 ? (
+            <Text
+              pointerEvents="none"
+              onLayout={handleInputMeasureLayout}
+              style={[
+                styles.assistantInputMeasure,
+                { width: inputAvailableWidth }
+              ]}
+            >
+              {inputValue || " "}
+            </Text>
+          ) : null}
           <TextInput
             value={inputValue}
             onChangeText={setInputValue}
+            onLayout={(event) => {
+              const nextWidth = Math.ceil(event.nativeEvent.layout.width);
+              setInputAvailableWidth((currentWidth) =>
+                Math.abs(currentWidth - nextWidth) > 1 ? nextWidth : currentWidth
+              );
+            }}
             placeholder="輸入想詢問的內容"
             placeholderTextColor={colors.textTertiary}
             multiline
             maxLength={240}
-            style={styles.assistantInput}
+            scrollEnabled={inputTextHeight >= assistantInputMaxTextHeight}
+            style={[styles.assistantInput, { height: inputTextHeight }]}
           />
           <Pressable
             accessibilityRole="button"
@@ -528,13 +650,22 @@ function AssistantDock({
   );
 }
 
-function AssistantRainbowBorder({ width }: { width: number }) {
+function AssistantRainbowBorder({
+  height,
+  radius,
+  width
+}: {
+  height: number;
+  radius: number;
+  width: number;
+}) {
   const [colorOffset, setColorOffset] = useState(0);
   const borderWidth = Math.max(width, 120);
-  const borderHeight = 56;
+  const borderHeight = Math.max(height, assistantInputMinFrameHeight);
+  const borderRadius = Math.min(radius, borderHeight / 2 - 2, borderWidth / 2 - 2);
   const segments = useMemo(
-    () => buildRoundedRainbowSegments(borderWidth, borderHeight),
-    [borderWidth]
+    () => buildRoundedRainbowSegments(borderWidth, borderHeight, borderRadius),
+    [borderHeight, borderRadius, borderWidth]
   );
 
   useEffect(() => {
@@ -590,6 +721,19 @@ function AssistantRainbowBorder({ width }: { width: number }) {
         />
       ))}
     </Svg>
+  );
+}
+
+function normalizeInputTextHeight(height: number) {
+  const roundedHeight = Math.ceil(height);
+
+  if (roundedHeight <= assistantInputMinTextHeight + assistantInputSingleLineTolerance) {
+    return assistantInputMinTextHeight;
+  }
+
+  return Math.min(
+    assistantInputMaxTextHeight,
+    Math.max(assistantInputMinTextHeight, roundedHeight)
   );
 }
 
@@ -659,9 +803,7 @@ function PillBackground({
   );
 }
 
-function buildRoundedRainbowSegments(width: number, height: number) {
-  const radius = Math.min(26, height / 2 - 2, width / 2 - 2);
-
+function buildRoundedRainbowSegments(width: number, height: number, radius: number) {
   return Array.from({ length: assistantRainbowSegmentCount }, (_, index) => {
     const start = index / assistantRainbowSegmentCount;
     const end = (index + 1) / assistantRainbowSegmentCount;
@@ -1011,7 +1153,7 @@ const styles = StyleSheet.create({
   assistantDock: {
     position: "absolute",
     right: spacing.md,
-    bottom: 74,
+    bottom: assistantDockBottom,
     left: spacing.md,
     zIndex: 4,
     gap: spacing.sm
@@ -1040,9 +1182,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0
   },
   assistantInputFrame: {
-    minHeight: 56,
+    minHeight: assistantInputMinFrameHeight,
     justifyContent: "center",
-    borderRadius: 28,
     backgroundColor: "transparent",
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 5 },
@@ -1055,7 +1196,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    borderRadius: 28,
     overflow: "hidden",
     backgroundColor: colors.surface
   },
@@ -1072,27 +1212,39 @@ const styles = StyleSheet.create({
     right: 3,
     bottom: 3,
     left: 3,
-    borderRadius: 25,
     backgroundColor: colors.surface
   },
   assistantInputContent: {
-    minHeight: 56,
+    minHeight: assistantInputMinFrameHeight,
     flexDirection: "row",
     alignItems: "flex-end",
     gap: spacing.xs,
     padding: spacing.xs,
-    borderRadius: 28
+    borderRadius: assistantInputMinFrameHeight / 2
   },
   assistantInput: {
     flex: 1,
-    maxHeight: 104,
-    minHeight: 40,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 10,
+    maxHeight: assistantInputMaxTextHeight,
+    minHeight: assistantInputMinTextHeight,
+    paddingHorizontal: assistantInputHorizontalPadding,
+    paddingVertical: assistantInputVerticalPadding,
     color: colors.text,
     fontFamily: typography.fontFamily,
     fontSize: typography.callout,
-    lineHeight: 22,
+    lineHeight: assistantInputLineHeight,
+    letterSpacing: 0
+  },
+  assistantInputMeasure: {
+    position: "absolute",
+    left: spacing.xs,
+    bottom: spacing.xs,
+    opacity: 0,
+    paddingHorizontal: assistantInputHorizontalPadding,
+    paddingVertical: assistantInputVerticalPadding,
+    color: colors.text,
+    fontFamily: typography.fontFamily,
+    fontSize: typography.callout,
+    lineHeight: assistantInputLineHeight,
     letterSpacing: 0
   },
   assistantSendButton: {
