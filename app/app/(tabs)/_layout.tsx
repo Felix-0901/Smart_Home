@@ -1,16 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import { useEffect, useState, type ComponentProps } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 import {
+  Animated,
   Keyboard,
   Platform,
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
   type GestureResponderEvent
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
 import { colors } from "../../src/theme/colors";
 import { typography } from "../../src/theme/typography";
 
@@ -112,8 +115,10 @@ export default function TabsLayout() {
 
 function PillTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const bottomOffset = Math.max(insets.bottom, 10);
+  const pillWidth = width - 24;
 
   useEffect(() => {
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
@@ -132,11 +137,9 @@ function PillTabBar({ state, navigation }: TabBarProps) {
   }
 
   return (
-    <View style={[styles.tabBarRoot, { height: bottomOffset + 92 }]} pointerEvents="box-none">
+    <View style={[styles.tabBarRoot, { height: bottomOffset + 96 }]} pointerEvents="box-none">
       <View style={[styles.pillShell, { bottom: bottomOffset }]}>
-        <View style={styles.notchMask} pointerEvents="none" />
-        <View style={[styles.notchShoulder, styles.notchShoulderLeft]} pointerEvents="none" />
-        <View style={[styles.notchShoulder, styles.notchShoulderRight]} pointerEvents="none" />
+        <PillBackground width={pillWidth} />
         <View style={styles.tabItemRow}>
           {state.routes.map((route, index) => {
             if (route.name === "assistant") {
@@ -215,6 +218,50 @@ function PillTabBar({ state, navigation }: TabBarProps) {
   );
 }
 
+function PillBackground({ width }: { width: number }) {
+  const height = 70;
+  const radius = 35;
+  const notchCenterX = width / 2;
+  const notchWidth = 104;
+  const notchDepth = 32;
+  const notchStartX = notchCenterX - notchWidth / 2;
+  const notchEndX = notchCenterX + notchWidth / 2;
+  const pillPath = [
+    `M ${radius} 0`,
+    `H ${notchStartX}`,
+    `C ${notchStartX + 16} 0 ${notchStartX + 13} ${notchDepth - 9} ${notchCenterX - 30} ${notchDepth}`,
+    `C ${notchCenterX - 18} ${notchDepth + 8} ${notchCenterX + 18} ${notchDepth + 8} ${notchCenterX + 30} ${notchDepth}`,
+    `C ${notchEndX - 13} ${notchDepth - 9} ${notchEndX - 16} 0 ${notchEndX} 0`,
+    `H ${width - radius}`,
+    `Q ${width} 0 ${width} ${radius}`,
+    `V ${height - radius}`,
+    `Q ${width} ${height} ${width - radius} ${height}`,
+    `H ${radius}`,
+    `Q 0 ${height} 0 ${height - radius}`,
+    `V ${radius}`,
+    `Q 0 0 ${radius} 0`,
+    "Z"
+  ].join(" ");
+
+  return (
+    <Svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      style={styles.pillSvg}
+      pointerEvents="none"
+    >
+      <Path d={pillPath} fill="rgba(255, 255, 255, 0.88)" />
+      <Path
+        d={pillPath}
+        fill="transparent"
+        stroke="rgba(255, 255, 255, 0.95)"
+        strokeWidth={1}
+      />
+    </Svg>
+  );
+}
+
 function isDefaultPrevented(event: unknown) {
   return (
     typeof event === "object" &&
@@ -236,6 +283,16 @@ function PillTabItem({
   routeName: string;
 }) {
   const item = tabItems[routeName];
+  const glassProgress = useRef(new Animated.Value(focused ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(glassProgress, {
+      toValue: focused ? 1 : 0,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 130
+    }).start();
+  }, [focused, glassProgress]);
 
   if (!item) {
     return null;
@@ -254,9 +311,36 @@ function PillTabItem({
         pressed && styles.tabItemPressed
       ]}
     >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.tabActiveGlass,
+          {
+            opacity: glassProgress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 1]
+            }),
+            transform: [
+              {
+                scale: glassProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.82, 1]
+                })
+              },
+              {
+                translateY: glassProgress.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [4, 0]
+                })
+              }
+            ]
+          }
+        ]}
+      />
       <Ionicons
         name={focused ? item.activeIcon : item.icon}
         size={23}
+        style={styles.tabIcon}
         color={focused ? colors.primary : colors.textTertiary}
       />
       <Text style={[styles.tabLabel, focused && styles.tabLabelFocused]}>
@@ -276,48 +360,23 @@ const styles = StyleSheet.create({
   },
   pillShell: {
     position: "absolute",
-    left: 14,
-    right: 14,
-    height: 66,
-    borderRadius: 34,
-    backgroundColor: colors.surface,
+    left: 12,
+    right: 12,
+    height: 70
+  },
+  pillSvg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.13,
     shadowRadius: 22,
     elevation: 12
   },
-  notchMask: {
-    position: "absolute",
-    top: -31,
-    left: "50%",
-    width: 82,
-    height: 82,
-    marginLeft: -41,
-    borderRadius: 41,
-    backgroundColor: colors.background,
-    zIndex: 1
-  },
-  notchShoulder: {
-    position: "absolute",
-    top: -2,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.surface,
-    zIndex: 2
-  },
-  notchShoulderLeft: {
-    left: "50%",
-    marginLeft: -62
-  },
-  notchShoulderRight: {
-    left: "50%",
-    marginLeft: 28
-  },
   tabItemRow: {
     position: "relative",
-    zIndex: 3,
+    zIndex: 2,
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
@@ -325,19 +384,38 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     flex: 1,
-    minHeight: 52,
+    minHeight: 56,
     alignItems: "center",
     justifyContent: "center",
-    gap: 2
+    gap: 2,
+    position: "relative"
   },
   tabItemPressed: {
     opacity: 0.72
   },
   centerSpacer: {
-    flex: 1,
-    minHeight: 52
+    flex: 0,
+    width: 82,
+    minHeight: 56
+  },
+  tabActiveGlass: {
+    position: "absolute",
+    width: 58,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.68)",
+    shadowColor: colors.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12
+  },
+  tabIcon: {
+    zIndex: 2
   },
   tabLabel: {
+    zIndex: 2,
     color: colors.textTertiary,
     fontFamily: typography.fontFamily,
     fontSize: 11,
@@ -350,7 +428,7 @@ const styles = StyleSheet.create({
   centerButton: {
     position: "absolute",
     zIndex: 5,
-    top: -32,
+    top: -28,
     left: "50%",
     width: 70,
     height: 70,
@@ -360,7 +438,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.primary,
     borderWidth: 4,
-    borderColor: colors.surface,
+    borderColor: colors.background,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.22,
