@@ -55,6 +55,7 @@ const refreshSchema = z.object({
 });
 
 const profileSchema = z.object({
+  email: emailSchema,
   displayName: displayNameSchema
 });
 
@@ -185,6 +186,11 @@ appRouter.patch("/me", requireAppUser, async (req, res, next) => {
     const updatedUser = await updateAppUserProfile(user.id, body);
     res.json({ ok: true, user: updatedUser });
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      res.status(409).json({ error: "這個 Email 已經註冊過" });
+      return;
+    }
+
     next(error);
   }
 });

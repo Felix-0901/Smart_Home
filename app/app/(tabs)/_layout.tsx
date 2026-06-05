@@ -222,16 +222,30 @@ function PillBackground({ width }: { width: number }) {
   const height = 70;
   const radius = 35;
   const notchCenterX = width / 2;
-  const notchWidth = 104;
-  const notchDepth = 32;
-  const notchStartX = notchCenterX - notchWidth / 2;
-  const notchEndX = notchCenterX + notchWidth / 2;
+  const cutoutRadius = 43;
+  const cutoutCenterY = 7;
+  const cutoutStartAngle = Math.PI + Math.asin(cutoutCenterY / cutoutRadius);
+  const cutoutMidAngle = Math.PI / 2;
+  const cutoutEndAngle = -Math.asin(cutoutCenterY / cutoutRadius);
+  const leftCutout = getCircularCutoutSegment(
+    notchCenterX,
+    cutoutCenterY,
+    cutoutRadius,
+    cutoutStartAngle,
+    cutoutMidAngle
+  );
+  const rightCutout = getCircularCutoutSegment(
+    notchCenterX,
+    cutoutCenterY,
+    cutoutRadius,
+    cutoutMidAngle,
+    cutoutEndAngle
+  );
   const pillPath = [
     `M ${radius} 0`,
-    `H ${notchStartX}`,
-    `C ${notchStartX + 16} 0 ${notchStartX + 13} ${notchDepth - 9} ${notchCenterX - 30} ${notchDepth}`,
-    `C ${notchCenterX - 18} ${notchDepth + 8} ${notchCenterX + 18} ${notchDepth + 8} ${notchCenterX + 30} ${notchDepth}`,
-    `C ${notchEndX - 13} ${notchDepth - 9} ${notchEndX - 16} 0 ${notchEndX} 0`,
+    `H ${leftCutout.startX}`,
+    `C ${leftCutout.c1x} ${leftCutout.c1y} ${leftCutout.c2x} ${leftCutout.c2y} ${leftCutout.endX} ${leftCutout.endY}`,
+    `C ${rightCutout.c1x} ${rightCutout.c1y} ${rightCutout.c2x} ${rightCutout.c2y} ${rightCutout.endX} ${rightCutout.endY}`,
     `H ${width - radius}`,
     `Q ${width} 0 ${width} ${radius}`,
     `V ${height - radius}`,
@@ -260,6 +274,39 @@ function PillBackground({ width }: { width: number }) {
       />
     </Svg>
   );
+}
+
+function getCircularCutoutSegment(
+  centerX: number,
+  centerY: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number
+) {
+  const control = (4 / 3) * Math.tan((endAngle - startAngle) / 4);
+  const startX = centerX + radius * Math.cos(startAngle);
+  const startY = centerY + radius * Math.sin(startAngle);
+  const endX = centerX + radius * Math.cos(endAngle);
+  const endY = centerY + radius * Math.sin(endAngle);
+  const startTangentX = -radius * Math.sin(startAngle);
+  const startTangentY = radius * Math.cos(startAngle);
+  const endTangentX = -radius * Math.sin(endAngle);
+  const endTangentY = radius * Math.cos(endAngle);
+
+  return {
+    startX: roundPathValue(startX),
+    startY: roundPathValue(startY),
+    c1x: roundPathValue(startX + control * startTangentX),
+    c1y: roundPathValue(startY + control * startTangentY),
+    c2x: roundPathValue(endX - control * endTangentX),
+    c2y: roundPathValue(endY - control * endTangentY),
+    endX: roundPathValue(endX),
+    endY: roundPathValue(endY)
+  };
+}
+
+function roundPathValue(value: number) {
+  return Number(value.toFixed(3));
 }
 
 function isDefaultPrevented(event: unknown) {
@@ -437,8 +484,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.primary,
-    borderWidth: 4,
-    borderColor: colors.background,
     shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.22,

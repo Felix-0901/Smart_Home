@@ -105,7 +105,7 @@ export function getMe(accessToken: string) {
   return apiRequest<{ ok: true; user: AppUser }>("/api/app/me", { accessToken });
 }
 
-export function updateProfile(accessToken: string, input: { displayName: string }) {
+export function updateProfile(accessToken: string, input: { email: string; displayName: string }) {
   return apiRequest<{ ok: true; user: AppUser }>("/api/app/me", {
     method: "PATCH",
     accessToken,

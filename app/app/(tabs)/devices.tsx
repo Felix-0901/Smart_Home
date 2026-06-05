@@ -547,13 +547,17 @@ function DeviceGroupRow({
           onScroll={handleScroll}
           onMomentumScrollEnd={handleScroll}
         >
-          {group.devices.map((device) => (
-            <GroupedDeviceCard
+          {group.devices.map((device, index) => (
+            <View
               key={device.id}
-              device={device}
-              width={cardWidth}
-              onPress={() => onOpenDevice(device)}
-            />
+              style={index < group.devices.length - 1 ? styles.deviceGroupScrollerItem : undefined}
+            >
+              <GroupedDeviceCard
+                device={device}
+                width={cardWidth}
+                onPress={() => onOpenDevice(device)}
+              />
+            </View>
           ))}
         </ScrollView>
         <ScrollArrowHint leftVisible={canScrollLeft} rightVisible={canScrollRight} />
@@ -850,9 +854,11 @@ const styles = StyleSheet.create({
     lineHeight: 18
   },
   deviceGroupScroller: {
-    gap: spacing.sm,
     paddingLeft: spacing.md,
-    paddingRight: spacing.sm
+    paddingRight: spacing.md
+  },
+  deviceGroupScrollerItem: {
+    marginRight: spacing.sm
   },
   scrollHintLayer: {
     position: "absolute",

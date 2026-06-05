@@ -260,16 +260,19 @@ export async function getAppUserById(userId: string) {
   return result.rows[0] ? toAppUser(result.rows[0]) : null;
 }
 
-export async function updateAppUserProfile(userId: string, input: { displayName: string }) {
+export async function updateAppUserProfile(
+  userId: string,
+  input: { email: string; displayName: string }
+) {
   await ensureAppSchema();
   const result = await pool.query<UserRow>(
     `
       UPDATE app_users
-      SET display_name = $2, updated_at = now()
+      SET email = $2, display_name = $3, updated_at = now()
       WHERE id = $1
       RETURNING id, email, password_hash, display_name, created_at::text, updated_at::text;
     `,
-    [userId, input.displayName.trim()]
+    [userId, normalizeEmail(input.email), input.displayName.trim()]
   );
 
   return result.rows[0] ? toAppUser(result.rows[0]) : null;

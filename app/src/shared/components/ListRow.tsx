@@ -40,7 +40,11 @@ export function ListRow({
         <Text style={[styles.title, destructive && styles.destructiveTitle]}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
-      {value ? <Text style={styles.value}>{value}</Text> : null}
+      {value ? (
+        <Text style={styles.value} numberOfLines={1} ellipsizeMode="tail">
+          {value}
+        </Text>
+      ) : null}
       {trailing}
       {onPress ? <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} /> : null}
     </>
@@ -106,7 +110,8 @@ const styles = StyleSheet.create({
     lineHeight: 18
   },
   value: {
-    maxWidth: 120,
+    maxWidth: "62%",
+    flexShrink: 1,
     color: colors.textSecondary,
     fontFamily: typography.fontFamily,
     fontSize: typography.subhead,

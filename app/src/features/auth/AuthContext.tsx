@@ -36,7 +36,7 @@ type AuthContextValue = {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (input: { email: string; password: string; displayName: string }) => Promise<void>;
   signOut: () => Promise<void>;
-  updateProfile: (input: { displayName: string }) => Promise<void>;
+  updateProfile: (input: { email: string; displayName: string }) => Promise<void>;
   changePassword: (input: { currentPassword: string; newPassword: string }) => Promise<void>;
   deleteAccount: () => Promise<void>;
 };

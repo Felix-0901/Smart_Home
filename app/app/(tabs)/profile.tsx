@@ -2,10 +2,8 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { StyleSheet, Switch, View } from "react-native";
 import { API_BASE_URL } from "../../src/config/env";
-import { useAuth, getErrorMessage } from "../../src/features/auth/AuthContext";
+import { useAuth } from "../../src/features/auth/AuthContext";
 import { profileSecurityNote } from "../../src/features/profile/profile-model";
-import { Button } from "../../src/shared/components/Button";
-import { FormTextField } from "../../src/shared/components/FormTextField";
 import { ListRow } from "../../src/shared/components/ListRow";
 import { Screen } from "../../src/shared/components/Screen";
 import { Section } from "../../src/shared/components/Section";
@@ -19,28 +17,12 @@ export default function ProfileScreen() {
   const {
     user,
     signOut,
-    updateProfile,
     developerMode,
     setDeveloperMode,
     deviceGroupMode,
     setDeviceGroupMode
   } = useAuth();
-  const [displayName, setDisplayName] = useState(user?.displayName ?? "");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSaveProfile() {
-    setLoading(true);
-    setError(null);
-
-    try {
-      await updateProfile({ displayName });
-    } catch (saveError) {
-      setError(getErrorMessage(saveError));
-    } finally {
-      setLoading(false);
-    }
-  }
 
   async function handleSignOut() {
     setLoading(true);
@@ -54,30 +36,13 @@ export default function ProfileScreen() {
   return (
     <Screen title="個人" subtitle="管理帳號資料、APP 連線設定與展示用狀態。" contentStyle={styles.screenContent}>
       <Section title="帳號">
-        <ListRow title="Email" value={user?.email ?? "尚未登入"} />
-        <FormTextField
-          label="顯示名稱"
-          value={displayName}
-          onChangeText={setDisplayName}
-          placeholder="輸入顯示名稱"
-          error={error}
-        />
         <ListRow
           title="帳號管理"
-          subtitle="修改密碼或註銷帳號。"
+          subtitle={user ? `${user.displayName} · ${user.email}` : "管理登入資料、顯示名稱與帳號狀態。"}
           icon="person-circle-outline"
           onPress={() => router.push("/account")}
         />
       </Section>
-
-      <Button
-        title="儲存個人資料"
-        icon="checkmark-circle-outline"
-        onPress={handleSaveProfile}
-        loading={loading}
-        disabled={!displayName.trim()}
-        style={styles.primaryButton}
-      />
 
       <Section title="生活空間">
         <ListRow
@@ -139,10 +104,6 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   screenContent: {
     paddingBottom: spacing.xxl
-  },
-  primaryButton: {
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.xl
   },
   preferenceRow: {
     padding: spacing.md,

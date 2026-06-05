@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text } from "react-native";
 import { getErrorMessage, useAuth } from "../src/features/auth/AuthContext";
 import { Button } from "../src/shared/components/Button";
@@ -14,7 +14,11 @@ import { typography } from "../src/theme/typography";
 
 export default function AccountScreen() {
   const router = useRouter();
-  const { user, changePassword, deleteAccount } = useAuth();
+  const { user, updateProfile, changePassword, deleteAccount } = useAuth();
+  const [email, setEmail] = useState(user?.email ?? "");
+  const [displayName, setDisplayName] = useState(user?.displayName ?? "");
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -28,6 +32,34 @@ export default function AccountScreen() {
     confirmPassword.length >= 8 &&
     !savingPassword &&
     !deletingAccount;
+  const canSaveProfile =
+    email.trim().length > 0 &&
+    displayName.trim().length > 0 &&
+    (email.trim().toLowerCase() !== (user?.email ?? "").toLowerCase() ||
+      displayName.trim() !== (user?.displayName ?? "")) &&
+    !savingProfile &&
+    !deletingAccount;
+
+  useEffect(() => {
+    setEmail(user?.email ?? "");
+    setDisplayName(user?.displayName ?? "");
+  }, [user?.displayName, user?.email]);
+
+  async function handleSaveProfile() {
+    setSavingProfile(true);
+    setProfileError(null);
+
+    try {
+      await updateProfile({
+        email: email.trim(),
+        displayName: displayName.trim()
+      });
+    } catch (saveError) {
+      setProfileError(getErrorMessage(saveError));
+    } finally {
+      setSavingProfile(false);
+    }
+  }
 
   async function handleChangePassword() {
     setPasswordError(null);
@@ -82,8 +114,34 @@ export default function AccountScreen() {
       <BackButton label="個人" onPress={() => router.back()} />
 
       <Section title="帳號資訊">
-        <ListRow title="Email" subtitle={user?.email ?? "尚未登入"} icon="mail-outline" />
+        <FormTextField
+          label="Email"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="輸入 Email"
+          keyboardType="email-address"
+          textContentType="emailAddress"
+          autoCapitalize="none"
+          autoCorrect={false}
+          error={profileError}
+        />
+        <FormTextField
+          label="顯示名稱"
+          value={displayName}
+          onChangeText={setDisplayName}
+          placeholder="輸入顯示名稱"
+          autoCorrect={false}
+        />
       </Section>
+
+      <Button
+        title="儲存帳號資訊"
+        icon="checkmark-circle-outline"
+        onPress={() => void handleSaveProfile()}
+        loading={savingProfile}
+        disabled={!canSaveProfile}
+        style={styles.primaryButton}
+      />
 
       <Section title="修改密碼" footer="密碼更新後會登出此裝置，請用新密碼重新登入。">
         <FormTextField

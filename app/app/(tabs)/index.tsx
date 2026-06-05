@@ -245,12 +245,16 @@ function DeviceGroupCarouselRow({ group, cardWidth }: { group: DeviceGroup; card
           onScroll={handleScroll}
           onMomentumScrollEnd={handleScroll}
         >
-          {group.devices.map((device) => (
-            <DeviceDataCard
+          {group.devices.map((device, index) => (
+            <View
               key={device.id}
-              device={device}
-              style={[styles.carouselDeviceCard, { width: cardWidth }]}
-            />
+              style={index < group.devices.length - 1 ? styles.groupScrollerItem : undefined}
+            >
+              <DeviceDataCard
+                device={device}
+                style={[styles.carouselDeviceCard, { width: cardWidth }]}
+              />
+            </View>
           ))}
         </ScrollView>
         <ScrollArrowHint leftVisible={canScrollLeft} rightVisible={canScrollRight} />
@@ -428,8 +432,11 @@ const styles = StyleSheet.create({
     lineHeight: 18
   },
   groupScroller: {
-    gap: spacing.sm,
+    paddingLeft: spacing.md,
     paddingRight: spacing.md
+  },
+  groupScrollerItem: {
+    marginRight: spacing.sm
   },
   scrollHintLayer: {
     position: "absolute",
