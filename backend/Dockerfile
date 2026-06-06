@@ -3,7 +3,7 @@ WORKDIR /app
 
 FROM base AS deps
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --include=dev
 
 FROM deps AS build
 COPY tsconfig.json ./
