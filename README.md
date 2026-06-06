@@ -4,7 +4,7 @@
 
 這是高中專題延伸整理的智慧家庭專案。專案目標是讓 K、M、P、R、T 多條硬體產品線收集資料，透過後端寫入 PostgreSQL，再由 App 綁定產品、查看即時與歷史資料，並控制 P 系列智慧插座。
 
-目前階段已包含後端 API、MQTT bridge、硬體韌體整理與 React Native / Expo App 初版。
+目前階段已包含後端 API、MQTT bridge、硬體韌體整理、React Native / Expo App 與 Homi APP Agent 工具層。
 
 ## 功能列表
 
@@ -14,6 +14,7 @@
 - 透過產品編號綁定 Demo 裝置
 - APP 查看即時資料與歷史資料
 - APP 控制 P 系列智慧插座 relay
+- Homi Agent 可透過受控 action 協助導頁、查詢數據、設定裝置、管理房屋空間、切換偏好、聚焦插座並直接送出 relay 控制
 - 本地使用 Docker 啟動 PostgreSQL 測試環境
 - 使用 Adminer 或 Docker 內的 `psql` 查看資料庫內容
 - 硬體程式碼集中放在 `hardware/`
@@ -24,6 +25,7 @@
 - 後端：放在 `backend/`，使用 Node.js + TypeScript API 服務
 - 資料庫：PostgreSQL
 - MQTT：Mosquitto，供 P 系列智慧插座接收開關指令與回報狀態
+- AI Agent：後端使用 OpenAI-compatible Chat Completions，APP 只執行後端驗證過的 Homi action
 - 本地測試：Docker Compose，包含後端 API、PostgreSQL、Adminer
 - 資料庫檢視：Adminer、Docker 內建 `psql`
 - 硬體韌體：放在 `hardware/`，後續依板子型號選擇 Arduino CLI、PlatformIO 或廠商工具
@@ -150,6 +152,11 @@ APP_JWT_SECRET=至少 32 字元的 APP JWT secret
 APP_ACCESS_TOKEN_TTL_SECONDS=900
 APP_REFRESH_TOKEN_TTL_DAYS=30
 MQTT_BROKER_URL=mqtt://你的 MQTT broker:1883
+AI_ENABLED=true
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=https://你的 AI endpoint
+AI_API_KEY=正式 AI key
+AI_MODEL=gpt-5.4
 ```
 
 正式 domain 確定後，硬體程式碼會把資料上傳到：

@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { getErrorMessage, useAuth } from "../src/features/auth/AuthContext";
+import { HomiTarget, useHomiActions } from "../src/features/assistant/HomiActionProvider";
 import { createHouse, getHouses } from "../src/services/api-client";
 import { Button } from "../src/shared/components/Button";
 import { EmptyState } from "../src/shared/components/EmptyState";
@@ -18,6 +19,7 @@ import type { House } from "../src/types/api";
 export default function HousesScreen() {
   const router = useRouter();
   const { accessToken } = useAuth();
+  const { actionRevision } = useHomiActions();
   const [houses, setHouses] = useState<House[]>([]);
   const [houseName, setHouseName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,7 +46,7 @@ export default function HousesScreen() {
 
   useEffect(() => {
     void loadHouses();
-  }, [loadHouses]);
+  }, [actionRevision, loadHouses]);
 
   async function handleCreateHouse() {
     if (!accessToken || !houseName.trim()) {
@@ -79,14 +81,16 @@ export default function HousesScreen() {
         />
       </Section>
 
-      <Button
-        title="新增房屋"
-        icon="add-circle-outline"
-        onPress={() => void handleCreateHouse()}
-        loading={saving}
-        disabled={!houseName.trim()}
-        style={styles.primaryButton}
-      />
+      <HomiTarget targetId="houses.create">
+        <Button
+          title="新增房屋"
+          icon="add-circle-outline"
+          onPress={() => void handleCreateHouse()}
+          loading={saving}
+          disabled={!houseName.trim()}
+          style={styles.primaryButton}
+        />
+      </HomiTarget>
 
       <Section title="我的房屋">
         {houses.length === 0 ? (
@@ -97,13 +101,15 @@ export default function HousesScreen() {
           />
         ) : (
           houses.map((house) => (
-            <ListRow
+            <HomiTarget key={house.id} targetId={`houses.house.${house.id}`}>
+              <ListRow
               key={house.id}
               title={house.name}
               subtitle={`${house.spaces.length} 個空間`}
               icon="home-outline"
               onPress={() => router.push({ pathname: "/houses/[houseId]", params: { houseId: house.id } })}
-            />
+              />
+            </HomiTarget>
           ))
         )}
       </Section>

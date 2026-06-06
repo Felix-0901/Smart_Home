@@ -19,6 +19,7 @@ import {
   type NativeSyntheticEvent
 } from "react-native";
 import { useAuth, getErrorMessage } from "../../src/features/auth/AuthContext";
+import { HomiTarget, useHomiActions } from "../../src/features/assistant/HomiActionProvider";
 import { getDeviceGroups, type DeviceGroup } from "../../src/features/devices/device-groups";
 import {
   formatReadingTime,
@@ -49,6 +50,7 @@ export default function DevicesScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { accessToken, deviceGroupMode } = useAuth();
+  const { actionRevision, consumeDeviceSettings, pendingDeviceSettings } = useHomiActions();
   const [devices, setDevices] = useState<Device[]>([]);
   const [houses, setHouses] = useState<House[]>([]);
   const [productCode, setProductCode] = useState("");
@@ -104,7 +106,20 @@ export default function DevicesScreen() {
   useEffect(() => {
     void loadDevices();
     void loadHouses();
-  }, [loadDevices, loadHouses]);
+  }, [actionRevision, loadDevices, loadHouses]);
+
+  useEffect(() => {
+    if (!pendingDeviceSettings || devices.length === 0) {
+      return;
+    }
+
+    const targetDevice = devices.find((device) => device.id === pendingDeviceSettings.deviceId);
+    if (targetDevice) {
+      openDeviceSheet(targetDevice);
+    }
+
+    consumeDeviceSettings(pendingDeviceSettings.commandId);
+  }, [consumeDeviceSettings, devices, pendingDeviceSettings]);
 
   async function handleClaim() {
     if (!accessToken) {
@@ -297,25 +312,29 @@ export default function DevicesScreen() {
       contentStyle={styles.screenContent}
     >
       <Section title="新增產品">
-        <FormTextField
-          label="產品編號"
-          value={productCode}
-          onChangeText={setProductCode}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          placeholder="P-DEMO-0001"
-          error={error}
-        />
+        <HomiTarget targetId="devices.claimInput">
+          <FormTextField
+            label="產品編號"
+            value={productCode}
+            onChangeText={setProductCode}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            placeholder="P-DEMO-0001"
+            error={error}
+          />
+        </HomiTarget>
       </Section>
 
-      <Button
-        title="綁定裝置"
-        icon="add-circle-outline"
-        onPress={handleClaim}
-        loading={saving}
-        disabled={productCode.trim().length < 3}
-        style={styles.claimButton}
-      />
+      <HomiTarget targetId="devices.claimButton">
+        <Button
+          title="綁定裝置"
+          icon="add-circle-outline"
+          onPress={handleClaim}
+          loading={saving}
+          disabled={productCode.trim().length < 3}
+          style={styles.claimButton}
+        />
+      </HomiTarget>
 
       <View style={styles.deviceSection}>
         <Text style={styles.deviceSectionTitle}>我的裝置</Text>
@@ -390,6 +409,7 @@ export default function DevicesScreen() {
                 disabled={saving || deleting}
                 style={[styles.sheetHeaderButton, styles.sheetHeaderButtonRight]}
               >
+                <HomiTarget targetId="devices.sheet.save" style={styles.sheetTargetProbe} />
                 <Text
                   style={[
                     styles.sheetHeaderAction,
@@ -409,34 +429,40 @@ export default function DevicesScreen() {
                   <ListRow title="裝置 ID" value={selectedDevice.deviceId} />
                 </Section>
                 <Section>
-                  <FormTextField
-                    label="裝置暱稱"
-                    value={alias}
-                    onChangeText={setAlias}
-                    placeholder="例如：廚房的小插座"
-                  />
+                  <HomiTarget targetId="devices.sheet.alias">
+                    <FormTextField
+                      label="裝置暱稱"
+                      value={alias}
+                      onChangeText={setAlias}
+                      placeholder="例如：廚房的小插座"
+                    />
+                  </HomiTarget>
                 </Section>
                 <Section title="位置" footer="先選擇房屋後，才能選擇該房屋底下的空間。">
-                  <ListRow
-                    title="房屋"
-                    value={selectedHouse?.name ?? "未指定"}
-                    icon="home-outline"
-                    onPress={() => {
-                      if (houses.length > 0) {
-                        openSelectionMenu("house");
-                        return;
-                      }
+                  <HomiTarget targetId="devices.sheet.house">
+                    <ListRow
+                      title="房屋"
+                      value={selectedHouse?.name ?? "未指定"}
+                      icon="home-outline"
+                      onPress={() => {
+                        if (houses.length > 0) {
+                          openSelectionMenu("house");
+                          return;
+                        }
 
-                      void openHousesSettings();
-                    }}
-                  />
-                  <ListRow
-                    title="空間"
-                    subtitle={selectedHouse ? undefined : "請先選擇房屋"}
-                    value={selectedHouse ? selectedSpace?.name ?? "未指定" : "尚未可選"}
-                    icon="cube-outline"
-                    onPress={selectedHouse ? () => openSelectionMenu("space") : undefined}
-                  />
+                        void openHousesSettings();
+                      }}
+                    />
+                  </HomiTarget>
+                  <HomiTarget targetId="devices.sheet.space">
+                    <ListRow
+                      title="空間"
+                      subtitle={selectedHouse ? undefined : "請先選擇房屋"}
+                      value={selectedHouse ? selectedSpace?.name ?? "未指定" : "尚未可選"}
+                      icon="cube-outline"
+                      onPress={selectedHouse ? () => openSelectionMenu("space") : undefined}
+                    />
+                  </HomiTarget>
                 </Section>
                 <Section footer="移除後只會解除此帳號的綁定，不會刪除產品資料或歷史數據。">
                   <ListRow
@@ -549,8 +575,9 @@ function DeviceGroupRow({
           onMomentumScrollEnd={handleScroll}
         >
           {group.devices.map((device, index) => (
-            <View
+            <HomiTarget
               key={device.id}
+              targetId={`devices.device.${device.id}`}
               style={index < group.devices.length - 1 ? styles.deviceGroupScrollerItem : undefined}
             >
               <GroupedDeviceCard
@@ -558,7 +585,7 @@ function DeviceGroupRow({
                 width={cardWidth}
                 onPress={() => onOpenDevice(device)}
               />
-            </View>
+            </HomiTarget>
           ))}
         </ScrollView>
         <ScrollArrowHint leftVisible={canScrollLeft} rightVisible={canScrollRight} />
@@ -984,6 +1011,10 @@ const styles = StyleSheet.create({
   sheetHeaderButtonRight: {
     right: spacing.md,
     alignItems: "flex-end"
+  },
+  sheetTargetProbe: {
+    ...StyleSheet.absoluteFill,
+    zIndex: -1
   },
   sheetHeaderAction: {
     color: colors.primary,

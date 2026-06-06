@@ -11,12 +11,14 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type StyleProp,
   type ViewStyle
 } from "react-native";
 import { useAuth, getErrorMessage } from "../../src/features/auth/AuthContext";
+import { HomiTarget, useHomiActions } from "../../src/features/assistant/HomiActionProvider";
 import { dashboardPollingIntervalMs } from "../../src/features/dashboard/dashboard-model";
 import { getDeviceGroups, type DeviceGroup } from "../../src/features/devices/device-groups";
 import {
@@ -48,6 +50,16 @@ export default function HomeScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const { accessToken, user, deviceGroupMode } = useAuth();
+  const {
+    actionRevision,
+    consumeHomeRelayFocus,
+    pendingHomeRelayFocus,
+    registerTargetPreparer
+  } = useHomiActions();
+  const scrollRef = useRef<ScrollView>(null);
+  const relaySectionYRef = useRef(0);
+  const realtimeSectionYRef = useRef(0);
+  const relayExpandedRef = useRef(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
   const [devicesSyncedForUserId, setDevicesSyncedForUserId] = useState<string | null>(null);
@@ -56,7 +68,12 @@ export default function HomeScreen() {
   const [relayOrderIds, setRelayOrderIds] = useState<string[]>([]);
   const [relayOrderLoadedForUserId, setRelayOrderLoadedForUserId] = useState<string | null>(null);
   const [sortingRelayId, setSortingRelayId] = useState<string | null>(null);
+  const [highlightedRelayId, setHighlightedRelayId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    relayExpandedRef.current = relayExpanded;
+  }, [relayExpanded]);
 
   const loadDevices = useCallback(async () => {
     if (!accessToken) {
@@ -84,7 +101,7 @@ export default function HomeScreen() {
     }, dashboardPollingIntervalMs);
 
     return () => clearInterval(interval);
-  }, [loadDevices]);
+  }, [actionRevision, loadDevices]);
 
   useEffect(() => {
     let active = true;
@@ -202,6 +219,70 @@ export default function HomeScreen() {
     void saveHomeRelayOrder(user.id, relayOrderIds);
   }, [devicesSyncedForUserId, pDevices, relayOrderIds, relayOrderLoadedForUserId, user?.id]);
 
+  const scrollToContentY = useCallback(async (y: number) => {
+    scrollRef.current?.scrollTo({
+      y: Math.max(y - spacing.sm, 0),
+      animated: true
+    });
+    await waitForAgentScroll();
+  }, []);
+
+  const handleRelaySectionLayout = useCallback((event: LayoutChangeEvent) => {
+    relaySectionYRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  const handleRealtimeSectionLayout = useCallback((event: LayoutChangeEvent) => {
+    realtimeSectionYRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  useEffect(() => {
+    const cleanupCallbacks = orderedPDevices.map((device) =>
+      registerTargetPreparer(`home.relay.${device.id}`, async () => {
+        if (!relayExpandedRef.current && orderedPDevices.length > 3) {
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          relayExpandedRef.current = true;
+          setRelayExpanded(true);
+          await waitForAgentScroll(260);
+        }
+
+        await scrollToContentY(relaySectionYRef.current);
+      })
+    );
+
+    return () => {
+      cleanupCallbacks.forEach((cleanup) => cleanup());
+    };
+  }, [orderedPDevices, registerTargetPreparer, scrollToContentY]);
+
+  useEffect(() => {
+    const cleanupCallbacks = devices.map((device) =>
+      registerTargetPreparer(`home.device.${device.id}`, async () => {
+        await scrollToContentY(realtimeSectionYRef.current);
+      })
+    );
+
+    return () => {
+      cleanupCallbacks.forEach((cleanup) => cleanup());
+    };
+  }, [devices, registerTargetPreparer, scrollToContentY]);
+
+  useEffect(() => {
+    if (!pendingHomeRelayFocus) {
+      return;
+    }
+
+    if (pendingHomeRelayFocus.expandRelayList) {
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setRelayExpanded(true);
+    }
+
+    setHighlightedRelayId(pendingHomeRelayFocus.deviceId);
+    const timeout = setTimeout(() => setHighlightedRelayId(null), 2600);
+    consumeHomeRelayFocus(pendingHomeRelayFocus.commandId);
+
+    return () => clearTimeout(timeout);
+  }, [consumeHomeRelayFocus, pendingHomeRelayFocus]);
+
   function moveRelayDevice(deviceId: string, direction: "down" | "up") {
     setRelayOrderIds((currentOrderIds) => {
       const currentIndex = currentOrderIds.indexOf(deviceId);
@@ -232,6 +313,7 @@ export default function HomeScreen() {
       title="首頁"
       subtitle={`${user?.displayName ?? "使用者"}，即時掌握家中狀態與 P 系列插座。`}
       contentStyle={styles.screenContent}
+      scrollRef={scrollRef}
     >
       <View style={styles.metricRow}>
         <MetricTile label="已綁定裝置" value={String(devices.length)} detail="產品線總覽" />
@@ -249,50 +331,55 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      <SectionHeading title="P 系列智慧插座控制" />
-      <View style={styles.cardStack}>
-        {pDevices.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <EmptyState
-              icon="power-outline"
-              title="尚未綁定 P 系列"
-              body="新增產品編號 P-DEMO-0001 後，就能在這裡控制智慧插座。"
-              actionLabel="前往裝置"
-              onAction={() => router.push("/(tabs)/devices")}
+      <View onLayout={handleRelaySectionLayout}>
+        <SectionHeading title="P 系列智慧插座控制" />
+        <View style={styles.cardStack}>
+          {pDevices.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <EmptyState
+                icon="power-outline"
+                title="尚未綁定 P 系列"
+                body="新增產品編號 P-DEMO-0001 後，就能在這裡控制智慧插座。"
+                actionLabel="前往裝置"
+                onAction={() => router.push("/(tabs)/devices")}
+              />
+            </View>
+          ) : (
+            <RelayPlugList
+              devices={orderedPDevices}
+              expanded={relayExpanded}
+              highlightedDeviceId={highlightedRelayId}
+              loadingDeviceId={relayLoadingId}
+              sortingDeviceId={sortingRelayId}
+              onMoveDevice={moveRelayDevice}
+              onRelayChange={handleRelayChange}
+              onSetExpanded={setRelayExpanded}
+              onSetSortingDeviceId={setSortingRelayId}
             />
-          </View>
-        ) : (
-          <RelayPlugList
-            devices={orderedPDevices}
-            expanded={relayExpanded}
-            loadingDeviceId={relayLoadingId}
-            sortingDeviceId={sortingRelayId}
-            onMoveDevice={moveRelayDevice}
-            onRelayChange={handleRelayChange}
-            onSetExpanded={setRelayExpanded}
-            onSetSortingDeviceId={setSortingRelayId}
-          />
-        )}
+          )}
+        </View>
       </View>
 
-      <SectionHeading
-        title="即時狀態摘要"
-        footer="APP 目前輪詢後端 latest API；不直接連 MQTT broker。"
-      />
-      <View style={styles.cardStack}>
-        {devices.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <EmptyState
-              icon="hardware-chip-outline"
-              title="還沒有裝置"
-              body="到裝置頁輸入產品編號後，首頁會開始顯示即時感測資料。"
-              actionLabel="新增裝置"
-              onAction={() => router.push("/(tabs)/devices")}
-            />
-          </View>
-        ) : (
-          <DeviceGroupCarousel groups={deviceGroups} cardWidth={carouselCardWidth} />
-        )}
+      <View onLayout={handleRealtimeSectionLayout}>
+        <SectionHeading
+          title="即時狀態摘要"
+          footer="APP 目前輪詢後端 latest API；不直接連 MQTT broker。"
+        />
+        <View style={[styles.cardStack, styles.realtimeCardStack]}>
+          {devices.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <EmptyState
+                icon="hardware-chip-outline"
+                title="還沒有裝置"
+                body="到裝置頁輸入產品編號後，首頁會開始顯示即時感測資料。"
+                actionLabel="新增裝置"
+                onAction={() => router.push("/(tabs)/devices")}
+              />
+            </View>
+          ) : (
+            <DeviceGroupCarousel groups={deviceGroups} cardWidth={carouselCardWidth} />
+          )}
+        </View>
       </View>
 
       <Button
@@ -320,6 +407,7 @@ function DeviceGroupCarousel({ groups, cardWidth }: { groups: DeviceGroup[]; car
 function RelayPlugList({
   devices,
   expanded,
+  highlightedDeviceId,
   loadingDeviceId,
   sortingDeviceId,
   onMoveDevice,
@@ -329,6 +417,7 @@ function RelayPlugList({
 }: {
   devices: Device[];
   expanded: boolean;
+  highlightedDeviceId: string | null;
   loadingDeviceId: string | null;
   sortingDeviceId: string | null;
   onMoveDevice: (deviceId: string, direction: "down" | "up") => void;
@@ -359,6 +448,7 @@ function RelayPlugList({
         <RelayPlugCard
           key={device.id}
           device={device}
+          highlighted={highlightedDeviceId === device.id}
           loading={loadingDeviceId === device.id}
           sorting={sortingDeviceId === device.id}
           onMove={onMoveDevice}
@@ -393,6 +483,7 @@ function RelayPlugList({
 
 function RelayPlugCard({
   device,
+  highlighted,
   loading,
   sorting,
   onMove,
@@ -400,6 +491,7 @@ function RelayPlugCard({
   onSetSorting
 }: {
   device: Device;
+  highlighted: boolean;
   loading: boolean;
   sorting: boolean;
   onMove: (deviceId: string, direction: "down" | "up") => void;
@@ -452,6 +544,7 @@ function RelayPlugCard({
       }}
       style={({ pressed }) => [
         styles.relayCard,
+        highlighted && styles.relayCardHighlighted,
         sorting && styles.relayCardSorting,
         pressed && styles.relayCardPressed
       ]}
@@ -475,15 +568,17 @@ function RelayPlugCard({
               <Ionicons name="swap-vertical" size={17} color={colors.primary} />
             </View>
           ) : null}
-          <Switch
-            accessibilityLabel={`${getDeviceTitle(device)} 開關`}
-            value={relayOn}
-            onValueChange={(value) => void onRelayChange(device, value)}
-            disabled={loading}
-            trackColor={{ false: colors.surfaceSecondary, true: colors.primary }}
-            thumbColor={colors.surface}
-            ios_backgroundColor={colors.surfaceSecondary}
-          />
+          <HomiTarget targetId={`home.relay.${device.id}`}>
+            <Switch
+              accessibilityLabel={`${getDeviceTitle(device)} 開關`}
+              value={relayOn}
+              onValueChange={(value) => void onRelayChange(device, value)}
+              disabled={loading}
+              trackColor={{ false: colors.surfaceSecondary, true: colors.primary }}
+              thumbColor={colors.surface}
+              ios_backgroundColor={colors.surfaceSecondary}
+            />
+          </HomiTarget>
         </View>
       </View>
     </Pressable>
@@ -491,6 +586,8 @@ function RelayPlugCard({
 }
 
 function DeviceGroupCarouselRow({ group, cardWidth }: { group: DeviceGroup; cardWidth: number }) {
+  const { registerTargetPreparer } = useHomiActions();
+  const scrollRef = useRef<ScrollView>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(group.devices.length > 1);
   const snapInterval = cardWidth + spacing.sm;
@@ -499,6 +596,19 @@ function DeviceGroupCarouselRow({ group, cardWidth }: { group: DeviceGroup; card
     setCanScrollLeft(false);
     setCanScrollRight(group.devices.length > 1);
   }, [group.devices.length]);
+
+  useEffect(() => {
+    const cleanupCallbacks = group.devices.map((device, index) =>
+      registerTargetPreparer(`home.device.${device.id}`, async () => {
+        scrollRef.current?.scrollTo({ x: index * snapInterval, animated: true });
+        await waitForAgentScroll();
+      })
+    );
+
+    return () => {
+      cleanupCallbacks.forEach((cleanup) => cleanup());
+    };
+  }, [group.devices, registerTargetPreparer, snapInterval]);
 
   function handleScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
     const currentIndex = Math.round(event.nativeEvent.contentOffset.x / snapInterval);
@@ -519,6 +629,7 @@ function DeviceGroupCarouselRow({ group, cardWidth }: { group: DeviceGroup; card
       </View>
       <View style={styles.groupScrollerFrame}>
         <ScrollView
+          ref={scrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.groupScroller}
@@ -535,10 +646,12 @@ function DeviceGroupCarouselRow({ group, cardWidth }: { group: DeviceGroup; card
               key={device.id}
               style={index < group.devices.length - 1 ? styles.groupScrollerItem : undefined}
             >
-              <DeviceDataCard
-                device={device}
-                style={[styles.carouselDeviceCard, { width: cardWidth }]}
-              />
+              <HomiTarget targetId={`home.device.${device.id}`}>
+                <DeviceDataCard
+                  device={device}
+                  style={[styles.carouselDeviceCard, { width: cardWidth }]}
+                />
+              </HomiTarget>
             </View>
           ))}
         </ScrollView>
@@ -573,6 +686,10 @@ function ScrollArrowHint({
       ) : <View />}
     </View>
   );
+}
+
+function waitForAgentScroll(ms = 430) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function SectionHeading({ title, footer }: { title: string; footer?: string }) {
@@ -695,6 +812,9 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingHorizontal: spacing.md
   },
+  realtimeCardStack: {
+    paddingHorizontal: 0
+  },
   groupStack: {
     gap: spacing.lg
   },
@@ -709,7 +829,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    paddingHorizontal: spacing.xs
+    paddingHorizontal: spacing.md
   },
   groupAccent: {
     width: 4,
@@ -735,7 +855,8 @@ const styles = StyleSheet.create({
     lineHeight: 18
   },
   groupScroller: {
-    paddingHorizontal: 0
+    paddingLeft: spacing.md,
+    paddingRight: spacing.md
   },
   groupScrollerItem: {
     marginRight: spacing.sm
@@ -777,6 +898,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: spacing.md,
     backgroundColor: colors.surface
+  },
+  relayCardHighlighted: {
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16
   },
   relayCardPressed: {
     opacity: 0.82

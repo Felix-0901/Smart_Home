@@ -24,12 +24,17 @@ import { getDeviceGroups, type DeviceGroup, type DeviceGroupMode } from "../../s
 import {
   formatReadingTime,
   formatReadingValue,
+  getDeviceMetricOptions,
   getMetricUnit,
   getDeviceSubtitle,
   getDeviceTitle,
-  getReadingMetricKeys,
   metricLabels
 } from "../../src/features/devices/device-format";
+import {
+  HomiTarget,
+  useHomiActions,
+  type HomiDataQueryCommand
+} from "../../src/features/assistant/HomiActionProvider";
 import { getDeviceReadings, getDevices } from "../../src/services/api-client";
 import { Button } from "../../src/shared/components/Button";
 import { EmptyState } from "../../src/shared/components/EmptyState";
@@ -55,6 +60,7 @@ type NumericPoint = ChartPoint<number>;
 
 export default function DataScreen() {
   const { accessToken, developerMode, deviceGroupMode } = useAuth();
+  const { actionRevision, consumeDataQuery, pendingDataQuery } = useHomiActions();
   const [devices, setDevices] = useState<Device[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [metric, setMetric] = useState("");
@@ -92,15 +98,13 @@ export default function DataScreen() {
 
   useEffect(() => {
     void loadDevices().catch((loadError) => setError(getErrorMessage(loadError)));
-  }, [loadDevices]);
+  }, [actionRevision, loadDevices]);
 
   const metricOptions = useMemo(() => {
-    const keys = getReadingMetricKeys(selectedDevice?.latestReading, {
+    return getDeviceMetricOptions(selectedDevice, {
       includeHidden: developerMode,
       limit: developerMode ? 64 : 10
     });
-    const fallback = ["temperature_c", "humidity_percent", "eco2_ppm", "tvoc_ppb", "gas_detected", "relay_on"];
-    return Array.from(new Set([...keys, ...fallback])).slice(0, developerMode ? 64 : 10);
   }, [developerMode, selectedDevice]);
 
   useEffect(() => {
@@ -109,22 +113,34 @@ export default function DataScreen() {
     }
   }, [metric, metricOptions]);
 
-  async function handleQuery() {
-    if (!accessToken || !selectedDevice) {
+  const queryReadings = useCallback(async (overrides: Partial<HomiDataQueryCommand> = {}) => {
+    if (!accessToken) {
+      return;
+    }
+
+    const targetDeviceId = overrides.deviceId ?? selectedDeviceId;
+    const targetDevice = devices.find((device) => device.id === targetDeviceId);
+    if (!targetDevice) {
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    const from = rangeMode === "custom" ? fromDateTimeInputValue(customFrom) : getRangeStart(rangeMode);
-    const to = rangeMode === "custom" ? fromDateTimeInputValue(customTo) : undefined;
+    const targetRangeMode = overrides.rangeMode ?? rangeMode;
+    const targetCustomFrom = overrides.customFrom ?? customFrom;
+    const targetCustomTo = overrides.customTo ?? customTo;
+    const targetMetric = overrides.metric ?? metric;
+    const from = targetRangeMode === "custom"
+      ? fromDateTimeInputValue(targetCustomFrom)
+      : getRangeStart(targetRangeMode);
+    const to = targetRangeMode === "custom" ? fromDateTimeInputValue(targetCustomTo) : undefined;
 
     try {
-      const response = await getDeviceReadings(accessToken, selectedDevice.id, {
+      const response = await getDeviceReadings(accessToken, targetDevice.id, {
         from,
         to,
-        metric: metric || undefined,
+        metric: targetMetric || undefined,
         limit: 200
       });
       setReadings(response.readings);
@@ -133,7 +149,59 @@ export default function DataScreen() {
     } finally {
       setLoading(false);
     }
+  }, [
+    accessToken,
+    customFrom,
+    customTo,
+    devices,
+    metric,
+    rangeMode,
+    selectedDevice,
+    selectedDeviceId
+  ]);
+
+  async function handleQuery() {
+    await queryReadings();
   }
+
+  useEffect(() => {
+    if (!pendingDataQuery || devices.length === 0) {
+      return;
+    }
+
+    const targetDevice = devices.find((device) => device.id === pendingDataQuery.deviceId);
+    if (!targetDevice) {
+      consumeDataQuery(pendingDataQuery.commandId);
+      return;
+    }
+
+    const targetMetricOptions = getDeviceMetricOptions(targetDevice, {
+      includeHidden: developerMode,
+      limit: developerMode ? 64 : 10
+    });
+    const nextMetric = targetMetricOptions.includes(pendingDataQuery.metric)
+      ? pendingDataQuery.metric
+      : targetMetricOptions[0] ?? pendingDataQuery.metric;
+
+    setSelectedDeviceId(pendingDataQuery.deviceId);
+    setMetric(nextMetric);
+    setRangeMode(pendingDataQuery.rangeMode);
+    setDisplayMode(pendingDataQuery.displayMode);
+
+    if (pendingDataQuery.customFrom) {
+      setCustomFrom(toDateTimeInputValue(new Date(pendingDataQuery.customFrom)));
+    }
+
+    if (pendingDataQuery.customTo) {
+      setCustomTo(toDateTimeInputValue(new Date(pendingDataQuery.customTo)));
+    }
+
+    if (pendingDataQuery.autoRun) {
+      void queryReadings({ ...pendingDataQuery, metric: nextMetric });
+    }
+
+    consumeDataQuery(pendingDataQuery.commandId);
+  }, [consumeDataQuery, developerMode, devices, pendingDataQuery, queryReadings]);
 
   function handleSelectDevice(deviceId: string) {
     if (deviceId === selectedDeviceId) {
@@ -175,86 +243,96 @@ export default function DataScreen() {
                 依{deviceGroupMode === "space" ? "空間" : "系列"}顯示
               </Text>
             </View>
-            <DeviceGroupPicker
-              groups={deviceGroups}
-              selectedGroupId={selectedDeviceGroup?.id ?? ""}
-              selectedDeviceId={selectedDeviceId}
-              mode={deviceGroupMode}
-              onSelectGroup={handleSelectDeviceGroup}
-              onSelectDevice={handleSelectDevice}
-            />
+            <HomiTarget targetId="data.devicePicker">
+              <DeviceGroupPicker
+                groups={deviceGroups}
+                selectedGroupId={selectedDeviceGroup?.id ?? ""}
+                selectedDeviceId={selectedDeviceId}
+                mode={deviceGroupMode}
+                onSelectGroup={handleSelectDeviceGroup}
+                onSelectDevice={handleSelectDevice}
+              />
+            </HomiTarget>
 
             <View style={styles.fieldHeader}>
               <Text style={styles.fieldLabel}>感測欄位</Text>
               {developerMode ? <Text style={styles.developerBadge}>開發者模式</Text> : null}
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.chipRow}
-            >
-              {metricOptions.map((option) => (
-                <Pressable
-                  key={option}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: metric === option }}
-                  onPress={() => setMetric(option)}
-                  style={[styles.metricChip, metric === option && styles.metricChipSelected]}
-                >
-                  <Text
-                    style={[
-                      styles.metricChipText,
-                      metric === option && styles.metricChipTextSelected
-                    ]}
+            <HomiTarget targetId="data.metricPicker">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.chipRow}
+              >
+                {metricOptions.map((option) => (
+                  <Pressable
+                    key={option}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: metric === option }}
+                    onPress={() => setMetric(option)}
+                    style={[styles.metricChip, metric === option && styles.metricChipSelected]}
                   >
-                    {metricLabels[option] ?? option}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
+                    <Text
+                      style={[
+                        styles.metricChipText,
+                        metric === option && styles.metricChipTextSelected
+                      ]}
+                    >
+                      {metricLabels[option] ?? option}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </HomiTarget>
 
-            <View style={styles.segmentBlock}>
-              <SegmentedControl
-                value={rangeMode}
-                onChange={(value) => setRangeMode(value as RangeMode)}
-                options={[
-                  { label: "24 小時", value: "24h" },
-                  { label: "7 天", value: "7d" },
-                  { label: "自訂", value: "custom" }
-                ]}
-              />
-            </View>
-
-            {rangeMode === "custom" ? (
-              <View style={styles.inlineGroup}>
-                <DateTimeSelectionRow
-                  label="開始時間"
-                  value={customFrom}
-                  onPress={() => setDatePickerTarget("from")}
-                />
-                <View style={styles.inlineSeparator} />
-                <DateTimeSelectionRow
-                  label="結束時間"
-                  value={customTo}
-                  onPress={() => setDatePickerTarget("to")}
+            <HomiTarget targetId="data.timeRange">
+              <View style={styles.segmentBlock}>
+                <SegmentedControl
+                  value={rangeMode}
+                  onChange={(value) => setRangeMode(value as RangeMode)}
+                  options={[
+                    { label: "24 小時", value: "24h" },
+                    { label: "7 天", value: "7d" },
+                    { label: "自訂", value: "custom" }
+                  ]}
                 />
               </View>
-            ) : null}
 
-            <View style={styles.segmentBlock}>
-              <SegmentedControl
-                value={displayMode}
-                onChange={(value) => setDisplayMode(value as DisplayMode)}
-                options={[
-                  { label: "圖表", value: "chart" },
-                  { label: "表格", value: "table" },
-                  { label: "原始", value: "raw" }
-                ]}
-              />
-            </View>
+              {rangeMode === "custom" ? (
+                <View style={styles.inlineGroup}>
+                  <DateTimeSelectionRow
+                    label="開始時間"
+                    value={customFrom}
+                    onPress={() => setDatePickerTarget("from")}
+                  />
+                  <View style={styles.inlineSeparator} />
+                  <DateTimeSelectionRow
+                    label="結束時間"
+                    value={customTo}
+                    onPress={() => setDatePickerTarget("to")}
+                  />
+                </View>
+              ) : null}
+            </HomiTarget>
+
+            <HomiTarget targetId="data.displayMode">
+              <View style={styles.segmentBlock}>
+                <SegmentedControl
+                  value={displayMode}
+                  onChange={(value) => setDisplayMode(value as DisplayMode)}
+                  options={[
+                    { label: "圖表", value: "chart" },
+                    { label: "表格", value: "table" },
+                    { label: "原始", value: "raw" }
+                  ]}
+                />
+              </View>
+            </HomiTarget>
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
-            <Button title="查詢資料" icon="search-outline" onPress={handleQuery} loading={loading} />
+            <HomiTarget targetId="data.queryButton">
+              <Button title="查詢資料" icon="search-outline" onPress={handleQuery} loading={loading} />
+            </HomiTarget>
           </View>
         )}
       </Section>

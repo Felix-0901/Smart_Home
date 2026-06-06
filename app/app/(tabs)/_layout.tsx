@@ -24,6 +24,7 @@ import {
   assistantQuickActions,
   useAssistantChat
 } from "../../src/features/assistant/assistant-chat";
+import { HomiTarget } from "../../src/features/assistant/HomiActionProvider";
 import { colors } from "../../src/theme/colors";
 import { spacing } from "../../src/theme/spacing";
 import { typography } from "../../src/theme/typography";
@@ -74,9 +75,9 @@ const tabItems: Record<
   },
   assistant: {
     activeIcon: "sparkles",
-    accessibilityLabel: "Sense AI 助理",
+    accessibilityLabel: "Homi 助理",
     icon: "sparkles-outline",
-    label: "助理"
+    label: "Homi"
   },
   data: {
     activeIcon: "stats-chart",
@@ -118,7 +119,8 @@ const assistantInputMaxTextHeight = 104;
 const assistantInputMaxFrameRadius = 32;
 const assistantInputHorizontalPadding = 12;
 const assistantInputLineHeight = 22;
-const assistantInputVerticalPadding = 10;
+const assistantInputPaddingBottom = 12;
+const assistantInputPaddingTop = 6;
 const assistantInputSingleLineTolerance = 8;
 const assistantInputHeightAnimation = {
   duration: 150,
@@ -154,7 +156,7 @@ export default function TabsLayout() {
         />
         <Tabs.Screen
           name="assistant"
-          options={{ title: "助理" }}
+          options={{ title: "Homi" }}
         />
         <Tabs.Screen
           name="data"
@@ -415,6 +417,7 @@ function PillTabBar({ state, navigation }: TabBarProps) {
                   pressed && styles.centerButtonPressed
                 ]}
               >
+                <HomiTarget targetId="tab.assistant" style={styles.targetProbe} />
                 <Animated.View pointerEvents="none" style={{ opacity: dropletIconOpacity }}>
                   <Ionicons
                     name={focused ? tabItems.assistant.activeIcon : tabItems.assistant.icon}
@@ -442,11 +445,12 @@ function AssistantDock({
   onContentHeightChange: (height: number) => void;
   progress: Animated.Value;
 }) {
-  const { inputValue, sendMessage, setInputValue } = useAssistantChat();
+  const { inputValue, isSending, sendMessage, setInputValue } = useAssistantChat();
   const { width } = useWindowDimensions();
   const [inputFrameHeight, setInputFrameHeight] = useState(assistantInputMinFrameHeight);
   const [inputAvailableWidth, setInputAvailableWidth] = useState(0);
   const [inputTextHeight, setInputTextHeight] = useState(assistantInputMinTextHeight);
+  const inputMultiline = inputTextHeight > assistantInputMinTextHeight + 1;
   const inputFrameWidth = width - 24 - spacing.md * 2;
   const inputFrameRadius = Math.min(
     assistantInputMaxFrameRadius,
@@ -556,7 +560,7 @@ function AssistantDock({
               key={action}
               accessibilityRole="button"
               accessibilityLabel={action}
-              onPress={() => sendMessage(action)}
+              onPress={() => void sendMessage(action)}
               style={({ pressed }) => [
                 styles.assistantQuickAction,
                 pressed && styles.assistantQuickActionPressed
@@ -626,20 +630,24 @@ function AssistantDock({
             }}
             placeholder="輸入想詢問的內容"
             placeholderTextColor={colors.textTertiary}
-            multiline
+            multiline={inputMultiline}
             maxLength={240}
-            scrollEnabled={inputTextHeight >= assistantInputMaxTextHeight}
-            style={[styles.assistantInput, { height: inputTextHeight }]}
+            scrollEnabled={inputMultiline && inputTextHeight >= assistantInputMaxTextHeight}
+            style={[
+              styles.assistantInput,
+              inputMultiline ? styles.assistantInputMultiline : styles.assistantInputSingleLine,
+              { height: inputTextHeight }
+            ]}
           />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="送出訊息"
-            disabled={!inputValue.trim()}
-            onPress={() => sendMessage()}
+            disabled={!inputValue.trim() || isSending}
+            onPress={() => void sendMessage()}
             style={({ pressed }) => [
               styles.assistantSendButton,
-              !inputValue.trim() && styles.assistantSendButtonDisabled,
-              pressed && inputValue.trim() && styles.assistantSendButtonPressed
+              (!inputValue.trim() || isSending) && styles.assistantSendButtonDisabled,
+              pressed && inputValue.trim() && !isSending && styles.assistantSendButtonPressed
             ]}
           >
             <Ionicons name="arrow-up" size={20} color={colors.surface} />
@@ -971,6 +979,14 @@ function isDefaultPrevented(event: unknown) {
   );
 }
 
+function tabTargetForRoute(routeName: string) {
+  if (routeName === "index") {
+    return "tab.home";
+  }
+
+  return `tab.${routeName}`;
+}
+
 function PillTabItem({
   focused,
   onLongPress,
@@ -1011,6 +1027,7 @@ function PillTabItem({
         pressed && styles.tabItemPressed
       ]}
     >
+      <HomiTarget targetId={tabTargetForRoute(routeName)} style={styles.targetProbe} />
       <Animated.View
         pointerEvents="none"
         style={[
@@ -1123,6 +1140,10 @@ const styles = StyleSheet.create({
     width: 82,
     minHeight: 56
   },
+  targetProbe: {
+    ...StyleSheet.absoluteFill,
+    zIndex: -1
+  },
   tabActiveGlass: {
     position: "absolute",
     width: 58,
@@ -1227,12 +1248,20 @@ const styles = StyleSheet.create({
     maxHeight: assistantInputMaxTextHeight,
     minHeight: assistantInputMinTextHeight,
     paddingHorizontal: assistantInputHorizontalPadding,
-    paddingVertical: assistantInputVerticalPadding,
     color: colors.text,
     fontFamily: typography.fontFamily,
     fontSize: typography.callout,
-    lineHeight: assistantInputLineHeight,
     letterSpacing: 0
+  },
+  assistantInputSingleLine: {
+    paddingBottom: 0,
+    paddingTop: 0
+  },
+  assistantInputMultiline: {
+    paddingBottom: assistantInputPaddingBottom,
+    paddingTop: assistantInputPaddingTop,
+    lineHeight: assistantInputLineHeight,
+    textAlignVertical: "top"
   },
   assistantInputMeasure: {
     position: "absolute",
@@ -1240,7 +1269,8 @@ const styles = StyleSheet.create({
     bottom: spacing.xs,
     opacity: 0,
     paddingHorizontal: assistantInputHorizontalPadding,
-    paddingVertical: assistantInputVerticalPadding,
+    paddingBottom: assistantInputPaddingBottom,
+    paddingTop: assistantInputPaddingTop,
     color: colors.text,
     fontFamily: typography.fontFamily,
     fontSize: typography.callout,

@@ -38,7 +38,14 @@ const envSchema = z.object({
   MQTT_BROKER_URL: z.string().url().default("mqtt://localhost:1883"),
   MQTT_USERNAME: optionalNonEmptyString,
   MQTT_PASSWORD: optionalNonEmptyString,
-  MQTT_TOPIC_PREFIX: z.string().min(1).default("smart-home")
+  MQTT_TOPIC_PREFIX: z.string().min(1).default("smart-home"),
+  AI_ENABLED: booleanFromEnv.default(false),
+  AI_PROVIDER: z.enum(["openai_compatible"]).default("openai_compatible"),
+  AI_BASE_URL: z.string().url().default("https://liangjiewis.com"),
+  AI_API_KEY: optionalNonEmptyString,
+  AI_MODEL: z.string().min(1).default("gpt-5.4"),
+  AI_FALLBACK_MODEL: optionalNonEmptyString.default("gpt-4o-mini"),
+  AI_PREMIUM_MODEL: optionalNonEmptyString.default("gpt-5.4")
 });
 
 export const config = envSchema.parse(process.env);

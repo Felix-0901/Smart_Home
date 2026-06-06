@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text } from "react-native";
 import { getErrorMessage, useAuth } from "../../src/features/auth/AuthContext";
+import { HomiTarget, useHomiActions } from "../../src/features/assistant/HomiActionProvider";
 import {
   createHouseSpace,
   deleteHouse,
@@ -27,6 +28,7 @@ export default function HouseDetailScreen() {
   const params = useLocalSearchParams<{ houseId?: string }>();
   const houseId = Array.isArray(params.houseId) ? params.houseId[0] : params.houseId;
   const { accessToken } = useAuth();
+  const { actionRevision } = useHomiActions();
   const [house, setHouse] = useState<House | null>(null);
   const [houseName, setHouseName] = useState("");
   const [spaceName, setSpaceName] = useState("");
@@ -61,7 +63,7 @@ export default function HouseDetailScreen() {
 
   useEffect(() => {
     void loadHouse();
-  }, [loadHouse]);
+  }, [actionRevision, loadHouse]);
 
   function replaceSpace(updatedSpace: HouseSpace) {
     setHouse((current) => {
@@ -236,14 +238,16 @@ export default function HouseDetailScreen() {
         />
       </Section>
 
-      <Button
-        title="儲存房屋名稱"
-        icon="checkmark-circle-outline"
-        onPress={() => void handleSaveHouse()}
-        loading={saving}
-        disabled={!houseName.trim()}
-        style={styles.primaryButton}
-      />
+      <HomiTarget targetId="houses.house.rename">
+        <Button
+          title="儲存房屋名稱"
+          icon="checkmark-circle-outline"
+          onPress={() => void handleSaveHouse()}
+          loading={saving}
+          disabled={!houseName.trim()}
+          style={styles.primaryButton}
+        />
+      </HomiTarget>
 
       <Section title="新增空間">
         <FormTextField
@@ -254,19 +258,22 @@ export default function HouseDetailScreen() {
         />
       </Section>
 
-      <Button
-        title="新增空間"
-        icon="add-circle-outline"
-        onPress={() => void handleCreateSpace()}
-        loading={saving}
-        disabled={!spaceName.trim()}
-        style={styles.primaryButton}
-      />
+      <HomiTarget targetId="houses.space.create">
+        <Button
+          title="新增空間"
+          icon="add-circle-outline"
+          onPress={() => void handleCreateSpace()}
+          loading={saving}
+          disabled={!spaceName.trim()}
+          style={styles.primaryButton}
+        />
+      </HomiTarget>
 
       <Section title="空間">
         {house && house.spaces.length > 0 ? (
           house.spaces.map((space) => (
-            <ListRow
+            <HomiTarget key={space.id} targetId={`houses.space.${space.id}`}>
+              <ListRow
               key={space.id}
               title={space.name}
               icon="cube-outline"
@@ -274,7 +281,8 @@ export default function HouseDetailScreen() {
                 setEditingSpaceId(space.id);
                 setEditingSpaceName(space.name);
               }}
-            />
+              />
+            </HomiTarget>
           ))
         ) : (
           <EmptyState icon="cube-outline" title="尚未新增空間" body="新增空間後，裝置設定就能選擇它。" />
@@ -292,14 +300,16 @@ export default function HouseDetailScreen() {
             />
           </Section>
 
-          <Button
-            title="儲存空間"
-            icon="checkmark-circle-outline"
-            onPress={() => void handleSaveSpace()}
-            loading={saving}
-            disabled={!editingSpaceName.trim()}
-            style={styles.primaryButton}
-          />
+          <HomiTarget targetId="houses.space.rename">
+            <Button
+              title="儲存空間"
+              icon="checkmark-circle-outline"
+              onPress={() => void handleSaveSpace()}
+              loading={saving}
+              disabled={!editingSpaceName.trim()}
+              style={styles.primaryButton}
+            />
+          </HomiTarget>
 
           <Button
             title="刪除空間"

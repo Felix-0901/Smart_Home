@@ -2,6 +2,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { StyleSheet, Switch, View } from "react-native";
 import { API_BASE_URL } from "../../src/config/env";
+import { HomiTarget } from "../../src/features/assistant/HomiActionProvider";
 import { useAuth } from "../../src/features/auth/AuthContext";
 import { profileSecurityNote } from "../../src/features/profile/profile-model";
 import { ListRow } from "../../src/shared/components/ListRow";
@@ -37,60 +38,68 @@ export default function ProfileScreen() {
   return (
     <Screen title="個人" subtitle="管理帳號資料、APP 連線設定與展示用狀態。" contentStyle={styles.screenContent}>
       <Section title="帳號">
-        <ListRow
-          title="帳號管理"
-          subtitle={user ? `${user.displayName} · ${user.email}` : "管理登入資料、顯示名稱與帳號狀態。"}
-          icon="person-circle-outline"
-          onPress={() => router.push("/account")}
-        />
+        <HomiTarget targetId="profile.account">
+          <ListRow
+            title="帳號管理"
+            subtitle={user ? `${user.displayName} · ${user.email}` : "管理登入資料、顯示名稱與帳號狀態。"}
+            icon="person-circle-outline"
+            onPress={() => router.push("/account")}
+          />
+        </HomiTarget>
       </Section>
 
       <Section title="生活空間">
-        <ListRow
-          title="房屋"
-          subtitle="管理房屋與每棟房屋底下的空間。"
-          icon="home-outline"
-          onPress={() => router.push("/houses")}
-        />
+        <HomiTarget targetId="profile.houses">
+          <ListRow
+            title="房屋"
+            subtitle="管理房屋與每棟房屋底下的空間。"
+            icon="home-outline"
+            onPress={() => router.push("/houses")}
+          />
+        </HomiTarget>
       </Section>
 
       <Section title="裝置顯示">
-        <View style={styles.preferenceRow}>
-          <SegmentedControl
-            value={deviceGroupMode}
-            options={[
-              { label: "系列", value: "series" },
-              { label: "空間", value: "space" }
-            ]}
-            onChange={(value) => void setDeviceGroupMode(value as DeviceGroupMode)}
-          />
-        </View>
+        <HomiTarget targetId="profile.deviceGroupMode">
+          <View style={styles.preferenceRow}>
+            <SegmentedControl
+              value={deviceGroupMode}
+              options={[
+                { label: "系列", value: "series" },
+                { label: "空間", value: "space" }
+              ]}
+              onChange={(value) => void setDeviceGroupMode(value as DeviceGroupMode)}
+            />
+          </View>
+        </HomiTarget>
       </Section>
 
       <Section title="系統">
         <ListRow title="API 端點" subtitle={API_BASE_URL} icon="server-outline" />
         <ListRow title="資料安全" subtitle={profileSecurityNote} icon="shield-checkmark-outline" />
-        <ListRow
-          title="開發者模式"
-          subtitle="開啟後，數據頁會顯示 raw、ADC、腳位與診斷欄位。"
-          icon="construct-outline"
-          trailing={
-            <Switch
-              accessibilityLabel="開發者模式"
-              value={developerMode}
-              onValueChange={(value) => void setDeveloperMode(value)}
-              trackColor={{ false: colors.surfaceSecondary, true: colors.primary }}
-              thumbColor={colors.surface}
-              ios_backgroundColor={colors.surfaceSecondary}
-            />
-          }
-        />
+        <HomiTarget targetId="profile.developerMode">
+          <ListRow
+            title="開發者模式"
+            subtitle="開啟後，數據頁會顯示 raw、ADC、腳位與診斷欄位。"
+            icon="construct-outline"
+            trailing={
+              <Switch
+                accessibilityLabel="開發者模式"
+                value={developerMode}
+                onValueChange={(value) => void setDeveloperMode(value)}
+                trackColor={{ false: colors.surfaceSecondary, true: colors.primary }}
+                thumbColor={colors.surface}
+                ios_backgroundColor={colors.surfaceSecondary}
+              />
+            }
+          />
+        </HomiTarget>
       </Section>
 
-      <Section title="Sense AI 預覽功能">
+      <Section title="Homi 預覽功能">
         <ListRow
-          title="智慧異常摘要"
-          subtitle="預留後續 features/insights，可用歷史資料產生展示互動與異常提醒。"
+          title="智慧家庭 Agent"
+          subtitle="Homi 會依照資料與受控 action 協助導頁、查詢與插座確認操作。"
           icon="sparkles-outline"
         />
       </Section>

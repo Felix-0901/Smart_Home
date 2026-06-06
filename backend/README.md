@@ -86,11 +86,20 @@ MQTT_BROKER_URL=mqtt://localhost:1883
 MQTT_USERNAME=
 MQTT_PASSWORD=
 MQTT_TOPIC_PREFIX=smart-home
+AI_ENABLED=true
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=https://liangjiewis.com
+AI_API_KEY=<placeholder>
+AI_MODEL=gpt-5.4
+AI_FALLBACK_MODEL=gpt-4o-mini
+AI_PREMIUM_MODEL=gpt-5.4
 TZ=Asia/Taipei
 PGTZ=Asia/Taipei
 ```
 
 本地開發值放在 `backend/.env`。正式部署時請在 Coolify 設定正式值，不要提交正式 Token 或密碼。
+
+`AI_API_KEY` 只允許放在後端環境變數或 Coolify Secret，不可放進 APP 或 README。`AI_BASE_URL` 若沒有以 `/v1` 結尾，後端會自動呼叫 `${AI_BASE_URL}/v1/chat/completions`。
 
 時間欄位使用 PostgreSQL `TIMESTAMPTZ`，本地 Docker 與後端連線預設以 `Asia/Taipei` 顯示。API 回傳的 `received_at` 會以文字格式保留 `+08` 時區，例如 `2026-05-16 01:23:45.123456+08`。
 
@@ -221,6 +230,9 @@ DELETE /api/app/devices/:deviceId
 GET /api/app/devices/:deviceId/latest
 GET /api/app/devices/:deviceId/readings?from=&to=&metric=&limit=
 POST /api/app/devices/:deviceId/relay
+GET /api/app/agent/history
+POST /api/app/agent/messages
+POST /api/app/agent/action-results
 ```
 
 綁定 Demo 裝置：
@@ -244,6 +256,63 @@ curl -X DELETE http://localhost:3003/api/app/devices/<deviceUuid> \
 修改裝置暱稱或空間時可使用 `PATCH /api/app/devices/:deviceId`，傳入 `alias`、`houseId` 或 `spaceId`；若值為 `null`，代表清除該欄位並回到預設顯示。
 
 新版 APP 使用房屋與空間模型。裝置設定可改傳 `houseId` 與 `spaceId`，後端會確認該房屋與空間屬於目前 APP 使用者；若 `houseId` 為 `null`，會清除房屋與空間設定。
+
+Homi Agent 使用 `POST /api/app/agent/messages` 接收使用者訊息、最近聊天紀錄與 APP 狀態。後端會建立使用者 context，優先呼叫 AI planner 產生受控 `actions`，再由後端 action policy 審核裝置、路由、欄位與操作權限；只有 AI 失敗時才使用本地 fallback planner。Relay 控制必須鎖定目前使用者擁有的單一 P 系列裝置，且使用者訊息必須明確指定產品編號、裝置暱稱或實際房屋/空間；否則即使模型選了某台裝置，後端也會改成釐清問題。APP 播放游標點擊 Switch 後會直接呼叫既有 `POST /api/app/devices/:deviceId/relay`，並透過 `POST /api/app/agent/action-results` 回報結果。
+
+Homi v1 正式工具分層如下：
+
+```text
+導覽工具：navigate
+資料工具：set_data_query
+首頁插座工具：focus_home_relay、request_relay_confirmation
+裝置工具：claim_device、open_device_settings、set_device_profile
+房屋空間工具：open_house_detail、create_house、create_space、rename_house、rename_space
+偏好工具：set_preference
+回饋工具：say、ask_clarification、show_toast
+```
+
+後端 prompt 會提供 `appCapabilities`，列出每個頁面可操作元件、target ID、使用者目前擁有的房屋、空間、裝置與可查詢感測欄位。模型只能輸出白名單 action；後端會再次確認 `deviceId`、`houseId`、`spaceId` 屬於目前使用者，且 `relay` 只能用在 P 系列。刪除裝置、刪除房屋、刪除空間、刪除帳號、登出、修改密碼與修改 email 不提供直接工具，Homi 只能導頁或提示使用者自行操作。
+
+Homi 的操作規則：
+
+- 若要由 Homi 打開數據頁並套用圖表、表格或原始資料查詢，使用者必須指定裝置暱稱、產品編號或 `deviceId`。只說房屋、空間、系列或感測欄位時，Homi 不能猜裝置。
+- 「客廳目前環境如何」或「客廳有哪些裝置」這類廣義空間問題，Homi 只用文字整理該空間所有裝置的即時摘要，最後再詢問是否要查看特定裝置的長期或即時數據。
+- 「要如何新增產品」、「如何修改個人資料」、「怎麼新增房屋空間」這類教學問題，Homi 會導向相關頁面並用游標提示操作位置；不會擅自填入或修改敏感資料。
+- 低風險偏好設定，例如顯示模式或開發者模式，在使用者明確要求開啟/關閉時可直接執行。
+
+建議測試 prompt：
+
+```text
+Homi，帶我看 P-DEMO-0001 近 24 小時的功率圖表
+Homi，幫我查 6 月 1 日到 6 月 5 日 T-DEMO-0001 有沒有人
+Homi，打開客廳智慧插座
+Homi，客廳目前環境如何
+Homi，客廳有哪些裝置
+Homi，帶我看客廳 7 天 eCO2
+Homi，要如何新增產品
+Homi，要如何修改個人資料
+Homi，把裝置顯示模式改成空間
+Homi，幫我新增一棟房屋叫做展示場
+Homi，在展示場新增一個空間叫做客廳
+Homi，把 P-DEMO-0001 放到展示場的客廳
+Homi，打開插座
+```
+
+`帶我看客廳 7 天 eCO2` 應該要求指定裝置暱稱或產品編號，不應直接猜某台裝置。最後一個 prompt 應該回覆釐清問題，不能直接控制第一台 P 系列。
+
+Homi 的聊天歷史以「本月」為範圍。APP 開啟 Homi 時會呼叫 `GET /api/app/agent/history` 載入目前月份的 thread 與訊息；送訊息時如果沒有 `threadId`，後端會自動接回同一使用者本月最新 thread。跨月後會建立新的 thread，並清理同一使用者本月以前的 Homi thread，避免聊天紀錄無限制累積。
+
+Homi 會將最近 10 則對話完整放入後端 prompt context。當同一 thread 的訊息超過門檻時，較舊的對話會壓縮到 `app_agent_threads.context_summary`，保留前情摘要但不把整段歷史無限制送進模型。
+
+Homi 會將對話與 action 執行狀態寫入：
+
+```text
+app_agent_threads
+app_agent_messages
+app_agent_action_runs
+```
+
+這些資料表只儲存訊息、action JSON、結果與錯誤，不儲存 AI API key。
 
 目前 seed 會建立：
 

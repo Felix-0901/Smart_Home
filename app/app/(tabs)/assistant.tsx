@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -15,7 +15,7 @@ import { typography } from "../../src/theme/typography";
 
 export default function AssistantScreen() {
   const { user } = useAuth();
-  const { messages } = useAssistantChat();
+  const { error, isSending, messages } = useAssistantChat();
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -27,10 +27,7 @@ export default function AssistantScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>{user?.displayName ?? "Smart Home"}</Text>
-          <Text style={styles.title}>Sense AI</Text>
-        </View>
-        <View style={styles.headerMark} accessibilityLabel="Sense AI">
-          <Ionicons name="sparkles" size={24} color={colors.surface} />
+          <Text style={styles.title}>Homi</Text>
         </View>
       </View>
 
@@ -45,6 +42,17 @@ export default function AssistantScreen() {
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
+        {isSending ? (
+          <View style={styles.thinkingRow}>
+            <View style={styles.avatar}>
+              <Ionicons name="sparkles" size={16} color={colors.primary} />
+            </View>
+            <View style={styles.thinkingBubble}>
+              <Text style={styles.thinkingText}>Homi 正在整理下一步</Text>
+            </View>
+          </View>
+        ) : null}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -62,12 +70,115 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       ) : null}
       <View style={[styles.messageBlock, isUser && styles.userMessageBlock]}>
         <View style={[styles.bubble, isUser ? styles.userBubble : styles.assistantBubble]}>
-          <Text style={[styles.messageText, isUser && styles.userMessageText]}>{message.text}</Text>
+          {isUser ? (
+            <Text style={[styles.messageText, styles.userMessageText]}>{message.text}</Text>
+          ) : (
+            <MarkdownText text={message.text} />
+          )}
         </View>
         <Text style={[styles.messageTime, isUser && styles.userMessageTime]}>{message.time}</Text>
       </View>
     </View>
   );
+}
+
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/);
+
+  return (
+    <View style={styles.markdownStack}>
+      {lines.map((line, index) => {
+        const trimmedLine = line.trim();
+
+        if (!trimmedLine) {
+          return <View key={`gap-${index}`} style={styles.markdownGap} />;
+        }
+
+        const headingMatch = trimmedLine.match(/^(#{1,3})\s+(.+)$/);
+        if (headingMatch) {
+          return (
+            <Text key={`heading-${index}`} style={[styles.messageText, styles.markdownHeading]}>
+              {renderInlineMarkdown(headingMatch[2], `heading-${index}`)}
+            </Text>
+          );
+        }
+
+        const bulletMatch = trimmedLine.match(/^[-*]\s+(.+)$/);
+        if (bulletMatch) {
+          return (
+            <View key={`bullet-${index}`} style={styles.markdownListRow}>
+              <Text style={[styles.messageText, styles.markdownMarker]}>•</Text>
+              <Text style={[styles.messageText, styles.markdownListText]}>
+                {renderInlineMarkdown(bulletMatch[1], `bullet-${index}`)}
+              </Text>
+            </View>
+          );
+        }
+
+        const numberedMatch = trimmedLine.match(/^(\d+)[.)]\s+(.+)$/);
+        if (numberedMatch) {
+          return (
+            <View key={`number-${index}`} style={styles.markdownListRow}>
+              <Text style={[styles.messageText, styles.markdownMarker]}>{numberedMatch[1]}.</Text>
+              <Text style={[styles.messageText, styles.markdownListText]}>
+                {renderInlineMarkdown(numberedMatch[2], `number-${index}`)}
+              </Text>
+            </View>
+          );
+        }
+
+        return (
+          <Text key={`paragraph-${index}`} style={styles.messageText}>
+            {renderInlineMarkdown(line, `paragraph-${index}`)}
+          </Text>
+        );
+      })}
+    </View>
+  );
+}
+
+function renderInlineMarkdown(input: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const tokenPattern = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(input)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(input.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    const key = `${keyPrefix}-${match.index}`;
+
+    if (token.startsWith("`")) {
+      nodes.push(
+        <Text key={key} style={styles.markdownCode}>
+          {token.slice(1, -1)}
+        </Text>
+      );
+    } else if (token.startsWith("**") || token.startsWith("__")) {
+      nodes.push(
+        <Text key={key} style={styles.markdownBold}>
+          {token.slice(2, -2)}
+        </Text>
+      );
+    } else {
+      nodes.push(
+        <Text key={key} style={styles.markdownItalic}>
+          {token.slice(1, -1)}
+        </Text>
+      );
+    }
+
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < input.length) {
+    nodes.push(input.slice(lastIndex));
+  }
+
+  return nodes;
 }
 
 const styles = StyleSheet.create({
@@ -98,18 +209,6 @@ const styles = StyleSheet.create({
     fontSize: typography.largeTitle,
     fontWeight: "700",
     letterSpacing: 0
-  },
-  headerMark: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.primary,
-    shadowColor: colors.shadow,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14,
-    shadowRadius: 12
   },
   messageList: {
     flexGrow: 1,
@@ -177,6 +276,45 @@ const styles = StyleSheet.create({
   userMessageText: {
     color: colors.surface
   },
+  markdownStack: {
+    gap: 4
+  },
+  markdownGap: {
+    height: spacing.xxs
+  },
+  markdownHeading: {
+    fontWeight: "800"
+  },
+  markdownBold: {
+    fontWeight: "800"
+  },
+  markdownItalic: {
+    fontStyle: "italic"
+  },
+  markdownCode: {
+    overflow: "hidden",
+    borderRadius: 5,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    backgroundColor: colors.surfaceSecondary,
+    color: colors.text,
+    fontFamily: typography.fontFamily,
+    fontSize: typography.footnote
+  },
+  markdownListRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.xs
+  },
+  markdownMarker: {
+    minWidth: 18,
+    color: colors.textSecondary,
+    fontWeight: "700"
+  },
+  markdownListText: {
+    flex: 1,
+    minWidth: 0
+  },
   messageTime: {
     marginTop: spacing.xxs,
     color: colors.textTertiary,
@@ -186,5 +324,31 @@ const styles = StyleSheet.create({
   },
   userMessageTime: {
     textAlign: "right"
+  },
+  thinkingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs
+  },
+  thinkingBubble: {
+    borderRadius: 18,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface
+  },
+  thinkingText: {
+    color: colors.textSecondary,
+    fontFamily: typography.fontFamily,
+    fontSize: typography.footnote,
+    fontWeight: "700",
+    letterSpacing: 0
+  },
+  errorText: {
+    alignSelf: "center",
+    color: colors.danger,
+    fontFamily: typography.fontFamily,
+    fontSize: typography.footnote,
+    lineHeight: 18,
+    textAlign: "center"
   }
 });

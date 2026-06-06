@@ -2,13 +2,16 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { HomiActionProvider } from "../src/features/assistant/HomiActionProvider";
 import { AuthProvider, useAuth } from "../src/features/auth/AuthContext";
 import { colors } from "../src/theme/colors";
 
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootNavigator />
+      <HomiActionProvider>
+        <RootNavigator />
+      </HomiActionProvider>
     </AuthProvider>
   );
 }

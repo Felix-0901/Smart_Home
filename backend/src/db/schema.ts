@@ -148,6 +148,79 @@ export async function createBaseSchema(client: PoolClient) {
       CREATE INDEX IF NOT EXISTS user_devices_space_id_idx
       ON user_devices (space_id);
     `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS app_agent_threads (
+        id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+        title TEXT,
+        context_summary TEXT,
+        context_summary_message_count INTEGER NOT NULL DEFAULT 0,
+        context_summary_updated_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+
+    await client.query(`
+      ALTER TABLE app_agent_threads
+      ADD COLUMN IF NOT EXISTS context_summary TEXT;
+    `);
+
+    await client.query(`
+      ALTER TABLE app_agent_threads
+      ADD COLUMN IF NOT EXISTS context_summary_message_count INTEGER NOT NULL DEFAULT 0;
+    `);
+
+    await client.query(`
+      ALTER TABLE app_agent_threads
+      ADD COLUMN IF NOT EXISTS context_summary_updated_at TIMESTAMPTZ;
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS app_agent_threads_user_id_idx
+      ON app_agent_threads (user_id, updated_at DESC);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS app_agent_messages (
+        id UUID PRIMARY KEY,
+        thread_id UUID NOT NULL REFERENCES app_agent_threads(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+        content TEXT NOT NULL,
+        actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+        client_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+        model TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS app_agent_messages_thread_id_idx
+      ON app_agent_messages (thread_id, created_at ASC);
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS app_agent_action_runs (
+        id UUID PRIMARY KEY,
+        thread_id UUID NOT NULL REFERENCES app_agent_threads(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+        action_id TEXT NOT NULL,
+        action_type TEXT NOT NULL,
+        action JSONB NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        result JSONB,
+        error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS app_agent_action_runs_thread_id_idx
+      ON app_agent_action_runs (thread_id, created_at ASC);
+    `);
 }
 
 export async function ensureSeriesTable(client: PoolClient, seriesKey: string) {

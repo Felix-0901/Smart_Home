@@ -29,8 +29,9 @@ import {
   updateHouse,
   updateHouseSpace
 } from "../services/app-houses.js";
-import { getDeviceReadings, getLatestDeviceReading } from "../services/readings.js";
 import { mqttBridge } from "../mqtt/bridge.js";
+import { getAgentMonthlyHistory, handleAgentMessage, recordAgentActionResult } from "../services/app-agent.js";
+import { getDeviceReadings, getLatestDeviceReading } from "../services/readings.js";
 import { getRequiredAppUser, requireAppUser } from "./auth.js";
 
 const emailSchema = z.string().trim().email().max(254);
@@ -95,6 +96,26 @@ const readingsQuerySchema = z.object({
 
 const relaySchema = z.object({
   relay_on: z.boolean()
+});
+
+const agentMessageSchema = z.object({
+  message: z.string().trim().min(1).max(1000),
+  messages: z.array(
+    z.object({
+      role: z.enum(["assistant", "user"]),
+      text: z.string().max(2000)
+    })
+  ).max(10).optional(),
+  clientState: z.record(z.string(), z.unknown()).optional(),
+  threadId: uuidParamSchema.optional()
+});
+
+const agentActionResultSchema = z.object({
+  threadId: uuidParamSchema.optional(),
+  actionId: z.string().trim().min(1).max(120),
+  status: z.enum(["succeeded", "failed", "canceled"]),
+  result: z.unknown().optional(),
+  error: z.string().trim().max(1000).optional()
 });
 
 function isUniqueViolation(error: unknown) {
@@ -494,6 +515,38 @@ appRouter.post("/devices/:deviceId/relay", requireAppUser, async (req, res, next
       return;
     }
 
+    next(error);
+  }
+});
+
+appRouter.post("/agent/messages", requireAppUser, async (req, res, next) => {
+  try {
+    const user = getRequiredAppUser(req);
+    const body = agentMessageSchema.parse(req.body);
+    const response = await handleAgentMessage(user, body);
+    res.json({ ok: true, ...response });
+  } catch (error) {
+    next(error);
+  }
+});
+
+appRouter.get("/agent/history", requireAppUser, async (req, res, next) => {
+  try {
+    const user = getRequiredAppUser(req);
+    const response = await getAgentMonthlyHistory(user);
+    res.json({ ok: true, ...response });
+  } catch (error) {
+    next(error);
+  }
+});
+
+appRouter.post("/agent/action-results", requireAppUser, async (req, res, next) => {
+  try {
+    const user = getRequiredAppUser(req);
+    const body = agentActionResultSchema.parse(req.body);
+    const response = await recordAgentActionResult(user.id, body);
+    res.json({ ok: true, ...response });
+  } catch (error) {
     next(error);
   }
 });

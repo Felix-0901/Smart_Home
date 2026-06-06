@@ -113,6 +113,29 @@ const metricPriority = [
   "wifi_rssi"
 ];
 
+export const seriesDefaultMetrics: Record<string, string[]> = {
+  k_series: [
+    "temperature_c",
+    "humidity_percent",
+    "heat_index_c",
+    "eco2_ppm",
+    "tvoc_ppb",
+    "gas_detected",
+    "flame_detected"
+  ],
+  m_series: [
+    "temperature_c",
+    "humidity_percent",
+    "heat_index_c",
+    "eco2_ppm",
+    "tvoc_ppb",
+    "gas_detected"
+  ],
+  p_series: ["relay_on", "power_w", "current_a", "voltage_v", "energy_wh"],
+  r_series: ["temperature_c", "humidity_percent", "heat_index_c"],
+  t_series: ["presence_detected", "motion_detected", "motion_latched"]
+};
+
 const hiddenMetricKeys = new Set([
   "dht_ok",
   "sgp30_ok",
@@ -246,32 +269,74 @@ export function getReadingMetricKeys(
 
   const limit = options.limit ?? 10;
 
-  return Object.keys(reading.values)
+  return sortMetricKeys(Object.keys(reading.values)
     .filter((key) => {
       if (key.endsWith("_command_id")) {
         return options.includeHidden === true;
       }
 
       return options.includeHidden === true || !hiddenMetricKeys.has(key);
-    })
-    .sort((a, b) => {
-      const aIndex = metricPriority.indexOf(a);
-      const bIndex = metricPriority.indexOf(b);
-      if (aIndex === -1 && bIndex === -1) {
-        return a.localeCompare(b);
-      }
-
-      if (aIndex === -1) {
-        return 1;
-      }
-
-      if (bIndex === -1) {
-        return -1;
-      }
-
-      return aIndex - bIndex;
-    })
+    }))
     .slice(0, limit);
+}
+
+export function getDeviceMetricOptions(
+  device?: Device | null,
+  options: { includeHidden?: boolean; limit?: number } = {}
+) {
+  if (!device) {
+    return [];
+  }
+
+  const limit = options.limit ?? 10;
+  const seriesMetrics = seriesDefaultMetrics[device.seriesKey] ?? [];
+  const hasKnownSeriesMetrics = seriesMetrics.length > 0;
+  const metrics = new Set(seriesMetrics);
+  const latestValues = device.latestReading?.values ?? {};
+
+  for (const key of Object.keys(latestValues)) {
+    if (key.endsWith("_command_id") && options.includeHidden !== true) {
+      continue;
+    }
+
+    if (!hasKnownSeriesMetrics) {
+      if (options.includeHidden === true || !hiddenMetricKeys.has(key)) {
+        metrics.add(key);
+      }
+      continue;
+    }
+
+    if (seriesMetrics.includes(key)) {
+      metrics.add(key);
+      continue;
+    }
+
+    if (options.includeHidden === true && hiddenMetricKeys.has(key)) {
+      metrics.add(key);
+    }
+  }
+
+  return sortMetricKeys(Array.from(metrics)).slice(0, limit);
+}
+
+function sortMetricKeys(keys: string[]) {
+  return keys.sort((a, b) => {
+    const aIndex = metricPriority.indexOf(a);
+    const bIndex = metricPriority.indexOf(b);
+    if (aIndex === -1 && bIndex === -1) {
+      return a.localeCompare(b);
+    }
+
+    if (aIndex === -1) {
+      return 1;
+    }
+
+    if (bIndex === -1) {
+      return -1;
+    }
+
+    return aIndex - bIndex;
+  });
 }
 
 export function getRelayState(reading?: Reading | null) {

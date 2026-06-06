@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -21,6 +21,7 @@ type ScreenProps = {
   scroll?: boolean;
   keyboard?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
+  scrollRef?: RefObject<ScrollView | null>;
 };
 
 export function Screen({
@@ -29,7 +30,8 @@ export function Screen({
   children,
   scroll = true,
   keyboard = false,
-  contentStyle
+  contentStyle,
+  scrollRef
 }: ScreenProps) {
   const content = (
     <View style={[styles.content, contentStyle]}>
@@ -47,6 +49,7 @@ export function Screen({
 
   const body = scroll ? (
     <ScrollView
+      ref={scrollRef}
       keyboardShouldPersistTaps="handled"
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={styles.scrollContent}

@@ -1,5 +1,14 @@
 import { API_BASE_URL } from "../config/env";
-import type { AppUser, AuthResponse, Device, House, HouseSpace, Reading } from "../types/api";
+import type {
+  AppUser,
+  AuthResponse,
+  Device,
+  HomiHistoryResponse,
+  HomiMessageResponse,
+  House,
+  HouseSpace,
+  Reading
+} from "../types/api";
 
 type ApiRequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
@@ -252,5 +261,44 @@ export function setDeviceRelay(accessToken: string, deviceId: string, relayOn: b
     method: "POST",
     accessToken,
     body: { relay_on: relayOn }
+  });
+}
+
+export function sendHomiMessage(
+  accessToken: string,
+  input: {
+    message: string;
+    messages?: Array<{ role: "assistant" | "user"; text: string }>;
+    clientState?: Record<string, unknown>;
+    threadId?: string;
+  }
+) {
+  return apiRequest<HomiMessageResponse>("/api/app/agent/messages", {
+    method: "POST",
+    accessToken,
+    body: input
+  });
+}
+
+export function getHomiHistory(accessToken: string) {
+  return apiRequest<HomiHistoryResponse>("/api/app/agent/history", {
+    accessToken
+  });
+}
+
+export function postHomiActionResult(
+  accessToken: string,
+  input: {
+    threadId?: string;
+    actionId: string;
+    status: "succeeded" | "failed" | "canceled";
+    result?: unknown;
+    error?: string;
+  }
+) {
+  return apiRequest<{ ok: true; matched: boolean }>("/api/app/agent/action-results", {
+    method: "POST",
+    accessToken,
+    body: input
   });
 }
