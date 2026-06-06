@@ -4,7 +4,7 @@ import { config } from "../config.js";
 import { pool } from "../db/pool.js";
 import { createBaseSchema, ensureSeriesTable } from "../db/schema.js";
 import type { DeviceDto } from "./app-devices.js";
-import { listUserDevices } from "./app-devices.js";
+import { createUniqueDeviceAlias, listUserDevices } from "./app-devices.js";
 import {
   buildInviteReadingValues,
   isInviteDemoCapabilities,
@@ -176,7 +176,8 @@ export async function redeemInviteCode(userId: string, rawInviteCode: string) {
           const productCode = `${seriesCode}-INVITE-${suffixText}`;
           const deviceId = `${seriesCode.toLowerCase()}-invite-${suffixText}`;
           const spaceName = plan.spaces[index] ?? plan.spaces[0];
-          const alias = plan.aliases[index] ?? `${seriesCode} 系列展示裝置 ${suffixText}`;
+          const aliasBase = plan.aliases[index] ?? `${seriesCode} 系列展示裝置 ${suffixText}`;
+          const alias = await createUniqueDeviceAlias(client, userId, aliasBase);
           const capabilities = {
             ...plan.capabilities,
             inviteDemo: true,

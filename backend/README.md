@@ -246,6 +246,8 @@ curl -X POST http://localhost:3003/api/app/devices/claim \
   -d '{"productCode":"P-DEMO-0001"}'
 ```
 
+綁定產品或兌換邀請碼取得裝置時，後端會自動寫入預設暱稱。若同一個帳號已經有相同暱稱，會依序使用 `名稱 (2)`、`名稱 (3)`。
+
 兌換展示邀請碼：
 
 ```bash

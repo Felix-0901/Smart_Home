@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import { pool } from "../db/pool.js";
 import { createBaseSchema } from "../db/schema.js";
 import { getLatestDeviceReading } from "./readings.js";
@@ -179,14 +180,19 @@ export async function claimDevice(userId: string, productCode: string) {
       throw new DeviceClaimError("這個產品已經被其他帳號綁定", 409);
     }
 
-    await client.query(
-      `
-        INSERT INTO user_devices (id, user_id, device_id)
-        VALUES ($1, $2, $3)
-        ON CONFLICT (user_id, device_id) DO NOTHING;
-      `,
-      [randomUUID(), userId, device.id]
-    );
+    if (owner) {
+      await ensureExistingDeviceAlias(client, userId, device.id, device.display_name);
+    } else {
+      const alias = await createUniqueDeviceAlias(client, userId, device.display_name);
+
+      await client.query(
+        `
+          INSERT INTO user_devices (id, user_id, device_id, alias)
+          VALUES ($1, $2, $3, $4);
+        `,
+        [randomUUID(), userId, device.id, alias]
+      );
+    }
 
     await client.query("COMMIT");
 
@@ -202,6 +208,102 @@ export async function claimDevice(userId: string, productCode: string) {
   } finally {
     client.release();
   }
+}
+
+export async function createUniqueDeviceAlias(
+  client: Pick<PoolClient, "query">,
+  userId: string,
+  baseAlias: string,
+  options: {
+    excludeDeviceUuid?: string;
+  } = {}
+) {
+  const normalizedBase = normalizeDeviceAlias(baseAlias);
+  const params: string[] = [userId];
+  const filters = ["user_devices.user_id = $1"];
+
+  if (options.excludeDeviceUuid) {
+    params.push(options.excludeDeviceUuid);
+    filters.push(`user_devices.device_id <> $${params.length}::uuid`);
+  }
+
+  const existingResult = await client.query<{ alias: string }>(
+    `
+      SELECT COALESCE(NULLIF(btrim(user_devices.alias), ''), devices.display_name) AS alias
+      FROM user_devices
+      JOIN devices ON devices.id = user_devices.device_id
+      WHERE ${filters.join(" AND ")}
+      FOR UPDATE OF user_devices;
+    `,
+    params
+  );
+  const usedAliases = new Set(
+    existingResult.rows
+      .map((row) => normalizeNullableDeviceAlias(row.alias))
+      .filter((alias): alias is string => Boolean(alias))
+  );
+
+  if (!usedAliases.has(normalizedBase)) {
+    return normalizedBase;
+  }
+
+  for (let suffix = 2; suffix < 10_000; suffix += 1) {
+    const candidate = `${normalizedBase} (${suffix})`;
+
+    if (!usedAliases.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  return `${normalizedBase} (${Date.now()})`;
+}
+
+async function ensureExistingDeviceAlias(
+  client: PoolClient,
+  userId: string,
+  deviceUuid: string,
+  baseAlias: string
+) {
+  const existingResult = await client.query<{ alias: string | null }>(
+    `
+      SELECT alias
+      FROM user_devices
+      WHERE user_id = $1
+        AND device_id = $2
+      FOR UPDATE;
+    `,
+    [userId, deviceUuid]
+  );
+  const existingAlias = normalizeNullableDeviceAlias(existingResult.rows[0]?.alias);
+
+  if (existingAlias) {
+    return;
+  }
+
+  const alias = await createUniqueDeviceAlias(client, userId, baseAlias, {
+    excludeDeviceUuid: deviceUuid
+  });
+
+  await client.query(
+    `
+      UPDATE user_devices
+      SET alias = $3,
+          updated_at = now()
+      WHERE user_id = $1
+        AND device_id = $2
+        AND (alias IS NULL OR btrim(alias) = '');
+    `,
+    [userId, deviceUuid, alias]
+  );
+}
+
+function normalizeDeviceAlias(alias: string) {
+  return alias.trim() || "智慧家庭裝置";
+}
+
+function normalizeNullableDeviceAlias(alias: string | null | undefined) {
+  const normalized = alias?.trim();
+  return normalized ? normalized : null;
 }
 
 export async function getUserDevice(userId: string, deviceUuid: string) {
