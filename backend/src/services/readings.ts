@@ -18,6 +18,16 @@ type ReadingValue = string | number | boolean | null;
 export type ReadingValues = Record<string, ReadingValue>;
 export type ReadingMetadata = Record<string, unknown>;
 
+type InviteReadingRow = {
+  received_at: string;
+  values: Record<string, unknown>;
+};
+
+const inviteHistoryBackfillMs = 30 * 24 * 60 * 60 * 1000;
+const inviteInitialStepMs = 60 * 60 * 1000;
+const inviteFollowUpStepMs = 30 * 60 * 1000;
+const inviteMaxGeneratedRowsPerCall = 1_200;
+
 export async function insertSeriesReading(
   seriesKey: string,
   values: ReadingValues,
@@ -180,10 +190,7 @@ async function ensureInviteSimulatedReadings(client: PoolClient, seriesKey: stri
   }
 
   const tableName = quoteIdentifier(tableNameForSeries(seriesKey));
-  const latestResult = await client.query<{
-    received_at: string;
-    values: Record<string, unknown>;
-  }>(
+  const latestResult = await client.query<InviteReadingRow>(
     `
       SELECT values, received_at::text AS received_at
       FROM ${tableName}
@@ -194,31 +201,122 @@ async function ensureInviteSimulatedReadings(client: PoolClient, seriesKey: stri
     [deviceId]
   );
   const latestReading = latestResult.rows[0];
+
+  const earliestResult = latestReading
+    ? await client.query<InviteReadingRow>(
+      `
+        SELECT values, received_at::text AS received_at
+        FROM ${tableName}
+        WHERE metadata->>'device_id' = $1
+        ORDER BY received_at ASC, id ASC
+        LIMIT 1;
+      `,
+      [deviceId]
+    )
+    : { rows: [] };
+  const earliestReading = earliestResult.rows[0];
   const now = new Date();
   const generatedAt = now.toISOString();
-  const initialStepMs = 3 * 60 * 60 * 1000;
-  const followUpStepMs = 30 * 60 * 1000;
-  const latestAt = latestReading ? new Date(latestReading.received_at) : null;
-  const stepMs = latestAt ? followUpStepMs : initialStepMs;
-  const firstTimestamp = latestAt
-    ? new Date(latestAt.getTime() + followUpStepMs)
-    : new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const historyStart = new Date(now.getTime() - inviteHistoryBackfillMs);
+  const deviceOrdinal = inviteDeviceOrdinal(device.product_code);
+  let inserted = 0;
 
-  if (firstTimestamp.getTime() > now.getTime()) {
+  if (!latestReading) {
+    await insertInviteSimulatedReadingRange(client, tableName, {
+      seriesKey: seriesKey as InviteSeriesKey,
+      deviceId,
+      productCode: device.product_code,
+      deviceOrdinal,
+      startAt: historyStart,
+      endAt: now,
+      stepMs: inviteInitialStepMs,
+      generatedAt,
+      maxRows: inviteMaxGeneratedRowsPerCall
+    });
     return;
   }
 
-  let previousEnergyWh = getNumericValue(latestReading?.values.energy_wh);
+  const earliestAt = earliestReading ? new Date(earliestReading.received_at) : null;
+  const latestAt = new Date(latestReading.received_at);
+
+  if (earliestAt) {
+    const backfillEnd = new Date(earliestAt.getTime() - inviteInitialStepMs);
+
+    if (historyStart.getTime() <= backfillEnd.getTime()) {
+      const backfillResult = await insertInviteSimulatedReadingRange(client, tableName, {
+        seriesKey: seriesKey as InviteSeriesKey,
+        deviceId,
+        productCode: device.product_code,
+        deviceOrdinal,
+        startAt: historyStart,
+        endAt: backfillEnd,
+        stepMs: inviteInitialStepMs,
+        generatedAt,
+        maxRows: inviteMaxGeneratedRowsPerCall
+      });
+      inserted += backfillResult.inserted;
+    }
+  }
+
+  if (inserted >= inviteMaxGeneratedRowsPerCall) {
+    return;
+  }
+
+  const followUpStart = new Date(latestAt.getTime() + inviteFollowUpStepMs);
+
+  if (followUpStart.getTime() > now.getTime()) {
+    return;
+  }
+
+  await insertInviteSimulatedReadingRange(client, tableName, {
+    seriesKey: seriesKey as InviteSeriesKey,
+    deviceId,
+    productCode: device.product_code,
+    deviceOrdinal,
+    startAt: followUpStart,
+    endAt: now,
+    stepMs: inviteFollowUpStepMs,
+    generatedAt,
+    maxRows: inviteMaxGeneratedRowsPerCall - inserted,
+    previousEnergyWh: getNumericValue(latestReading.values.energy_wh)
+  });
+}
+
+async function insertInviteSimulatedReadingRange(
+  client: PoolClient,
+  tableName: string,
+  options: {
+    seriesKey: InviteSeriesKey;
+    deviceId: string;
+    productCode: string;
+    deviceOrdinal: number;
+    startAt: Date;
+    endAt: Date;
+    stepMs: number;
+    generatedAt: string;
+    maxRows: number;
+    previousEnergyWh?: number;
+  }
+) {
+  let previousEnergyWh = options.previousEnergyWh;
   let inserted = 0;
 
+  if (
+    options.maxRows <= 0 ||
+    options.stepMs <= 0 ||
+    options.startAt.getTime() > options.endAt.getTime()
+  ) {
+    return { inserted, previousEnergyWh };
+  }
+
   for (
-    let timestamp = firstTimestamp.getTime();
-    timestamp <= now.getTime() && inserted < 120;
-    timestamp += stepMs
+    let timestamp = options.startAt.getTime();
+    timestamp <= options.endAt.getTime() && inserted < options.maxRows;
+    timestamp += options.stepMs
   ) {
     const receivedAt = new Date(timestamp);
-    const values = buildInviteReadingValues(seriesKey as InviteSeriesKey, receivedAt, {
-      deviceOrdinal: inviteDeviceOrdinal(device.product_code),
+    const values = buildInviteReadingValues(options.seriesKey, receivedAt, {
+      deviceOrdinal: options.deviceOrdinal,
       previousEnergyWh
     });
     previousEnergyWh = getNumericValue(values.energy_wh) ?? previousEnergyWh;
@@ -232,17 +330,19 @@ async function ensureInviteSimulatedReadings(client: PoolClient, seriesKey: stri
         values,
         {
           kind: "invite_simulated",
-          series_key: seriesKey,
-          device_id: deviceId,
-          product_code: device.product_code,
+          series_key: options.seriesKey,
+          device_id: options.deviceId,
+          product_code: options.productCode,
           source: "invite_simulator",
-          generated_at: generatedAt
+          generated_at: options.generatedAt
         },
         receivedAt.toISOString()
       ]
     );
     inserted += 1;
   }
+
+  return { inserted, previousEnergyWh };
 }
 
 function getNumericValue(value: unknown) {

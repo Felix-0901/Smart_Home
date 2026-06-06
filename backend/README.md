@@ -257,7 +257,7 @@ curl -X POST http://localhost:3003/api/app/invites/redeem \
 
 `APP_INVITE_CODE` 預設為 `Smart_Home`。兌換成功後，後端會為該帳號建立「展示屋」與基本空間，並建立 K/M/P/R/T 各兩台虛擬展示裝置。產品編號格式為 `X-INVITE-0001`，例如第一位兌換者會取得 `K-INVITE-0001`、`K-INVITE-0002`、`P-INVITE-0001`、`P-INVITE-0002` 等。每個帳號同一組邀請碼只能兌換一次。
 
-邀請碼裝置會標記為 `inviteDemo` / `virtualDevice`。查詢 latest 或 readings 時，後端會依裝置與時間自動補 simulated readings；P 系列邀請碼智慧插座的 relay 控制會直接寫入 DB，不依賴 MQTT 硬體在線。
+邀請碼裝置會標記為 `inviteDemo` / `virtualDevice`。查詢 latest 或 readings 時，後端會依裝置與時間自動補 simulated readings：首次會回補最近 30 天、每小時一筆的歷史資料；後續查詢會以 30 分鐘間隔補記到現在，讓展示裝置看起來像持續記錄中的真實裝置。P 系列邀請碼智慧插座的 relay 控制會直接寫入 DB，不依賴 MQTT 硬體在線。
 
 移除 APP 帳號中的裝置綁定：
 
