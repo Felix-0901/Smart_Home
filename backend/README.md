@@ -270,7 +270,7 @@ curl -X DELETE http://localhost:3003/api/app/devices/<deviceUuid> \
 
 此操作只會刪除 `user_devices` 的帳號綁定關係，不會刪除 `devices` 產品資料或各系列歷史讀值。
 
-修改裝置暱稱或空間時可使用 `PATCH /api/app/devices/:deviceId`，傳入 `alias`、`houseId` 或 `spaceId`；若值為 `null`，代表清除該欄位並回到預設顯示。
+修改裝置暱稱或空間時可使用 `PATCH /api/app/devices/:deviceId`，傳入 `alias`、`houseId` 或 `spaceId`。同一個 APP 帳號不能有兩台裝置使用相同暱稱；若 `alias` 和其他裝置重複，後端會回傳 409。若 `alias` 為 `null`，後端會重設為不重複的預設暱稱。
 
 新版 APP 使用房屋與空間模型。裝置設定可改傳 `houseId` 與 `spaceId`，後端會確認該房屋與空間屬於目前 APP 使用者；若 `houseId` 為 `null`，會清除房屋與空間設定。
 

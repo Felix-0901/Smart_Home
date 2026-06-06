@@ -240,17 +240,18 @@ export async function createUniqueDeviceAlias(
   const usedAliases = new Set(
     existingResult.rows
       .map((row) => normalizeNullableDeviceAlias(row.alias))
+      .map((alias) => alias ? normalizeDeviceAliasKey(alias) : null)
       .filter((alias): alias is string => Boolean(alias))
   );
 
-  if (!usedAliases.has(normalizedBase)) {
+  if (!usedAliases.has(normalizeDeviceAliasKey(normalizedBase))) {
     return normalizedBase;
   }
 
   for (let suffix = 2; suffix < 10_000; suffix += 1) {
     const candidate = `${normalizedBase} (${suffix})`;
 
-    if (!usedAliases.has(candidate)) {
+    if (!usedAliases.has(normalizeDeviceAliasKey(candidate))) {
       return candidate;
     }
   }
@@ -299,6 +300,10 @@ async function ensureExistingDeviceAlias(
 
 function normalizeDeviceAlias(alias: string) {
   return alias.trim() || "智慧家庭裝置";
+}
+
+function normalizeDeviceAliasKey(alias: string) {
+  return normalizeDeviceAlias(alias).toLocaleLowerCase();
 }
 
 function normalizeNullableDeviceAlias(alias: string | null | undefined) {
@@ -398,33 +403,114 @@ export async function updateUserDevice(
     nextRoomName = null;
   }
 
-  await pool.query(
-    `
-      UPDATE user_devices
-      SET
-        alias = CASE WHEN $3::boolean THEN $4 ELSE alias END,
-        room_name = CASE WHEN $5::boolean THEN $6 ELSE room_name END,
-        house_id = CASE WHEN $7::boolean THEN $8 ELSE house_id END,
-        space_id = CASE WHEN $9::boolean THEN $10 ELSE space_id END,
-        updated_at = now()
-      WHERE user_id = $1
-        AND device_id = $2;
-    `,
-    [
-      userId,
-      deviceUuid,
-      hasAlias,
-      input.alias ?? null,
-      hasRoomName,
-      nextRoomName,
-      hasHouseId,
-      nextHouseId,
-      hasSpaceId,
-      nextSpaceId
-    ]
-  );
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    const nextAlias = hasAlias
+      ? await resolveDeviceAliasForUpdate(client, userId, deviceUuid, input.alias ?? null)
+      : null;
+
+    if (hasAlias && nextAlias === null) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    await client.query(
+      `
+        UPDATE user_devices
+        SET
+          alias = CASE WHEN $3::boolean THEN $4 ELSE alias END,
+          room_name = CASE WHEN $5::boolean THEN $6 ELSE room_name END,
+          house_id = CASE WHEN $7::boolean THEN $8 ELSE house_id END,
+          space_id = CASE WHEN $9::boolean THEN $10 ELSE space_id END,
+          updated_at = now()
+        WHERE user_id = $1
+          AND device_id = $2;
+      `,
+      [
+        userId,
+        deviceUuid,
+        hasAlias,
+        nextAlias,
+        hasRoomName,
+        nextRoomName,
+        hasHouseId,
+        nextHouseId,
+        hasSpaceId,
+        nextSpaceId
+      ]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 
   return getUserDevice(userId, deviceUuid);
+}
+
+async function resolveDeviceAliasForUpdate(
+  client: PoolClient,
+  userId: string,
+  deviceUuid: string,
+  inputAlias: string | null
+) {
+  const targetResult = await client.query<{ display_name: string }>(
+    `
+      SELECT devices.display_name
+      FROM user_devices
+      JOIN devices ON devices.id = user_devices.device_id
+      WHERE user_devices.user_id = $1
+        AND user_devices.device_id = $2
+      FOR UPDATE OF user_devices;
+    `,
+    [userId, deviceUuid]
+  );
+  const target = targetResult.rows[0];
+
+  if (!target) {
+    return null;
+  }
+
+  const normalizedAlias = normalizeNullableDeviceAlias(inputAlias);
+
+  if (!normalizedAlias) {
+    return createUniqueDeviceAlias(client, userId, target.display_name, {
+      excludeDeviceUuid: deviceUuid
+    });
+  }
+
+  await assertDeviceAliasAvailable(client, userId, deviceUuid, normalizedAlias);
+  return normalizedAlias;
+}
+
+async function assertDeviceAliasAvailable(
+  client: PoolClient,
+  userId: string,
+  deviceUuid: string,
+  alias: string
+) {
+  const existingResult = await client.query<{ id: string }>(
+    `
+      SELECT user_devices.id::text AS id
+      FROM user_devices
+      JOIN devices ON devices.id = user_devices.device_id
+      WHERE user_devices.user_id = $1
+        AND user_devices.device_id <> $2
+        AND lower(COALESCE(NULLIF(btrim(user_devices.alias), ''), btrim(devices.display_name))) = lower($3)
+      FOR UPDATE OF user_devices
+      LIMIT 1;
+    `,
+    [userId, deviceUuid, alias]
+  );
+
+  if (existingResult.rows[0]) {
+    throw new DeviceUpdateError("同一個帳號已經有使用這個裝置暱稱", 409);
+  }
 }
 
 export async function deleteUserDevice(userId: string, deviceUuid: string) {
