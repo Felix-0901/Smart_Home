@@ -12,6 +12,7 @@ RUN npm run build
 
 FROM base AS runtime
 ENV NODE_ENV=production
+RUN apk add --no-cache curl
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
