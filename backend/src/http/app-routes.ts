@@ -29,6 +29,7 @@ import {
   updateHouse,
   updateHouseSpace
 } from "../services/app-houses.js";
+import { InviteCodeError, recordInviteRelayState, redeemInviteCode } from "../services/app-invites.js";
 import { mqttBridge } from "../mqtt/bridge.js";
 import { getAgentMonthlyHistory, handleAgentMessage, recordAgentActionResult } from "../services/app-agent.js";
 import { getDeviceReadings, getLatestDeviceReading } from "../services/readings.js";
@@ -70,6 +71,10 @@ const passwordChangeSchema = z.object({
 
 const claimSchema = z.object({
   productCode: z.string().trim().min(3).max(64)
+});
+
+const inviteRedeemSchema = z.object({
+  inviteCode: z.string().trim().min(1).max(80)
 });
 
 const nullableDeviceTextSchema = z.union([z.string().trim().min(1).max(80), z.null()]);
@@ -128,7 +133,12 @@ function isUniqueViolation(error: unknown) {
 }
 
 function sendKnownAppError(res: Response, error: unknown) {
-  if (error instanceof DeviceClaimError || error instanceof DeviceUpdateError || error instanceof HouseError) {
+  if (
+    error instanceof DeviceClaimError ||
+    error instanceof DeviceUpdateError ||
+    error instanceof HouseError ||
+    error instanceof InviteCodeError
+  ) {
     res.status(error.statusCode).json({ error: error.message });
     return true;
   }
@@ -413,6 +423,21 @@ appRouter.post("/devices/claim", requireAppUser, async (req, res, next) => {
   }
 });
 
+appRouter.post("/invites/redeem", requireAppUser, async (req, res, next) => {
+  try {
+    const user = getRequiredAppUser(req);
+    const body = inviteRedeemSchema.parse(req.body);
+    const result = await redeemInviteCode(user.id, body.inviteCode);
+    res.status(result.alreadyRedeemed ? 200 : 201).json({ ok: true, ...result });
+  } catch (error) {
+    if (sendKnownAppError(res, error)) {
+      return;
+    }
+
+    next(error);
+  }
+});
+
 appRouter.patch("/devices/:deviceId", requireAppUser, async (req, res, next) => {
   try {
     const user = getRequiredAppUser(req);
@@ -504,6 +529,12 @@ appRouter.post("/devices/:deviceId/relay", requireAppUser, async (req, res, next
 
     if (device.seriesKey !== "p_series") {
       res.status(400).json({ error: "只有 P 系列智慧插座支援 relay 控制" });
+      return;
+    }
+
+    if (device.capabilities.inviteDemo === true || device.productCode.includes("-INVITE-")) {
+      const command = await recordInviteRelayState(device, body.relay_on);
+      res.status(202).json({ ok: true, command });
       return;
     }
 

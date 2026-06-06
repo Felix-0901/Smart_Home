@@ -1,4 +1,17 @@
 services:
+  app:
+    build:
+      context: ./app
+      args:
+        EXPO_PUBLIC_API_BASE_URL: ${EXPO_PUBLIC_API_BASE_URL:-http://localhost:3003}
+    container_name: smart_home_app
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "${APP_PORT:-3004}:80"
+
   backend:
     build:
       context: ./backend
@@ -20,6 +33,7 @@ services:
       APP_JWT_SECRET: ${APP_JWT_SECRET:-local-dev-app-jwt-secret-change-me-32chars}
       APP_ACCESS_TOKEN_TTL_SECONDS: ${APP_ACCESS_TOKEN_TTL_SECONDS:-900}
       APP_REFRESH_TOKEN_TTL_DAYS: ${APP_REFRESH_TOKEN_TTL_DAYS:-30}
+      APP_INVITE_CODE: ${APP_INVITE_CODE:-Smart_Home}
       MQTT_ENABLED: ${MQTT_ENABLED:-true}
       MQTT_BROKER_URL: ${MQTT_BROKER_URL:-mqtt://mosquitto:1883}
       MQTT_USERNAME: ${MQTT_USERNAME:-}

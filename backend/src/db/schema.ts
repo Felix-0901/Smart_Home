@@ -150,6 +150,22 @@ export async function createBaseSchema(client: PoolClient) {
     `);
 
     await client.query(`
+      CREATE TABLE IF NOT EXISTS app_invite_redemptions (
+        id UUID PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+        invite_code TEXT NOT NULL,
+        device_count INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (user_id, invite_code)
+      );
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS app_invite_redemptions_user_id_idx
+      ON app_invite_redemptions (user_id, created_at DESC);
+    `);
+
+    await client.query(`
       CREATE TABLE IF NOT EXISTS app_agent_threads (
         id UUID PRIMARY KEY,
         user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,

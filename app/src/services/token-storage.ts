@@ -1,14 +1,14 @@
-import * as SecureStore from "expo-secure-store";
 import type { AuthTokens } from "../types/api";
+import { deletePersistentItem, getPersistentItem, setPersistentItem } from "./persistent-storage";
 
 const tokenStorageKey = "smart_home_app_tokens";
 
 export async function saveTokens(tokens: AuthTokens) {
-  await SecureStore.setItemAsync(tokenStorageKey, JSON.stringify(tokens));
+  await setPersistentItem(tokenStorageKey, JSON.stringify(tokens));
 }
 
 export async function getStoredTokens() {
-  const value = await SecureStore.getItemAsync(tokenStorageKey);
+  const value = await getPersistentItem(tokenStorageKey);
   if (!value) {
     return null;
   }
@@ -22,5 +22,5 @@ export async function getStoredTokens() {
 }
 
 export async function clearTokens() {
-  await SecureStore.deleteItemAsync(tokenStorageKey);
+  await deletePersistentItem(tokenStorageKey);
 }

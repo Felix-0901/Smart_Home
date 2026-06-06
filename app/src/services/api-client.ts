@@ -7,6 +7,7 @@ import type {
   HomiMessageResponse,
   House,
   HouseSpace,
+  InviteRedeemResponse,
   Reading
 } from "../types/api";
 
@@ -211,6 +212,14 @@ export function claimDevice(accessToken: string, productCode: string) {
     method: "POST",
     accessToken,
     body: { productCode }
+  });
+}
+
+export function redeemInviteCode(accessToken: string, inviteCode: string) {
+  return apiRequest<InviteRedeemResponse>("/api/app/invites/redeem", {
+    method: "POST",
+    accessToken,
+    body: { inviteCode }
   });
 }
 

@@ -21,12 +21,13 @@
 
 ## 技術架構
 
-- App：放在 `app/`，使用 React Native / Expo + TypeScript + Expo Router
+- App：放在 `app/`，使用 React Native / Expo + TypeScript + Expo Router，可用 Expo Web 匯出成靜態網站部署
 - 後端：放在 `backend/`，使用 Node.js + TypeScript API 服務
 - 資料庫：PostgreSQL
 - MQTT：Mosquitto，供 P 系列智慧插座接收開關指令與回報狀態
 - AI Agent：後端使用 OpenAI-compatible Chat Completions，APP 只執行後端驗證過的 Homi action
-- 本地測試：Docker Compose，包含後端 API、PostgreSQL、Adminer
+- 本地測試：Docker Compose，包含 APP Web、後端 API、PostgreSQL、Mosquitto、Adminer
+- APP Web 部署：`app/Dockerfile` 使用 Expo Web build，Nginx 提供靜態檔與 SPA fallback
 - 資料庫檢視：Adminer、Docker 內建 `psql`
 - 硬體韌體：放在 `hardware/`，後續依板子型號選擇 Arduino CLI、PlatformIO 或廠商工具
 
@@ -65,6 +66,12 @@ docker compose ps
 http://localhost:3003
 ```
 
+APP Web 本地網址：
+
+```text
+http://localhost:3004
+```
+
 確認後端與資料庫連線：
 
 ```bash
@@ -80,12 +87,19 @@ npm run db:setup
 npm run db:seed-demo-devices
 ```
 
-啟動 APP：
+若要用 iOS Simulator 啟動 APP：
 
 ```bash
 cd ../app
 npm install
 npm run ios
+```
+
+若要確認 APP Web production build：
+
+```bash
+cd ../app
+npm run build:web
 ```
 
 停止本地服務：
@@ -141,16 +155,28 @@ cp .env.example .env
 
 ## Coolify 部署教學
 
-後端已提供 `backend/Dockerfile`，之後可用 Coolify 部署成固定 domain。正式部署時至少需要設定：
+後端已提供 `backend/Dockerfile`，APP Web 已提供 `app/Dockerfile`。若使用根目錄 `docker-compose.yml` 部署，Coolify 會同時建立 APP Web、後端、PostgreSQL、Mosquitto 與 Adminer 服務。
+
+正式部署時建議至少設定兩個公開 domain：
 
 ```text
+APP Web：https://你的 APP 網域
+Backend API：https://你的 API 網域
+```
+
+APP Web 的 `EXPO_PUBLIC_API_BASE_URL` 是 build-time 變數，Coolify 重新設定後需要重新 build APP image。正式部署時至少需要設定：
+
+```text
+APP_PORT=3004
+EXPO_PUBLIC_API_BASE_URL=https://你的 API 網域
 DATABASE_URL=postgresql://...
 DEVICE_API_TOKEN=正式硬體上傳用 token
-CORS_ORIGIN=https://你的 App 或後台網域
-APP_PUBLIC_URL=https://你的固定 API domain
+CORS_ORIGIN=https://你的 APP 網域
+APP_PUBLIC_URL=https://你的 API 網域
 APP_JWT_SECRET=至少 32 字元的 APP JWT secret
 APP_ACCESS_TOKEN_TTL_SECONDS=900
 APP_REFRESH_TOKEN_TTL_DAYS=30
+APP_INVITE_CODE=Smart_Home
 MQTT_BROKER_URL=mqtt://你的 MQTT broker:1883
 AI_ENABLED=true
 AI_PROVIDER=openai_compatible
@@ -158,6 +184,8 @@ AI_BASE_URL=https://你的 AI endpoint
 AI_API_KEY=正式 AI key
 AI_MODEL=gpt-5.4
 ```
+
+不要在正式環境使用 `.env.example` 內的本地預設密碼、token 或 JWT secret。Adminer 只建議本地或內網短暫排錯使用，正式部署不要綁定公開 domain。
 
 正式 domain 確定後，硬體程式碼會把資料上傳到：
 

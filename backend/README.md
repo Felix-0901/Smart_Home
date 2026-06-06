@@ -81,6 +81,7 @@ APP_PUBLIC_URL=http://localhost:3003
 APP_JWT_SECRET=local-dev-app-jwt-secret-change-me-32chars
 APP_ACCESS_TOKEN_TTL_SECONDS=900
 APP_REFRESH_TOKEN_TTL_DAYS=30
+APP_INVITE_CODE=Smart_Home
 MQTT_ENABLED=true
 MQTT_BROKER_URL=mqtt://localhost:1883
 MQTT_USERNAME=
@@ -230,6 +231,7 @@ DELETE /api/app/devices/:deviceId
 GET /api/app/devices/:deviceId/latest
 GET /api/app/devices/:deviceId/readings?from=&to=&metric=&limit=
 POST /api/app/devices/:deviceId/relay
+POST /api/app/invites/redeem
 GET /api/app/agent/history
 POST /api/app/agent/messages
 POST /api/app/agent/action-results
@@ -243,6 +245,19 @@ curl -X POST http://localhost:3003/api/app/devices/claim \
   -H 'Authorization: Bearer <accessToken>' \
   -d '{"productCode":"P-DEMO-0001"}'
 ```
+
+兌換展示邀請碼：
+
+```bash
+curl -X POST http://localhost:3003/api/app/invites/redeem \
+  -H 'content-type: application/json' \
+  -H 'Authorization: Bearer <accessToken>' \
+  -d '{"inviteCode":"Smart_Home"}'
+```
+
+`APP_INVITE_CODE` 預設為 `Smart_Home`。兌換成功後，後端會為該帳號建立「展示屋」與基本空間，並建立 K/M/P/R/T 各兩台虛擬展示裝置。產品編號格式為 `X-INVITE-0001`，例如第一位兌換者會取得 `K-INVITE-0001`、`K-INVITE-0002`、`P-INVITE-0001`、`P-INVITE-0002` 等。每個帳號同一組邀請碼只能兌換一次。
+
+邀請碼裝置會標記為 `inviteDemo` / `virtualDevice`。查詢 latest 或 readings 時，後端會依裝置與時間自動補 simulated readings；P 系列邀請碼智慧插座的 relay 控制會直接寫入 DB，不依賴 MQTT 硬體在線。
 
 移除 APP 帳號中的裝置綁定：
 
@@ -326,21 +341,36 @@ T-DEMO-0001 -> t-series-001
 
 ## 部署細節
 
-後端已提供 `Dockerfile`，之後可部署到 Coolify。正式 domain 確認後，請在 Coolify 設定：
+後端已提供 `Dockerfile`，之後可部署到 Coolify。正式部署建議將 APP Web 與 Backend API 分成兩個公開 domain，例如：
+
+```text
+APP Web：https://你的 APP 網域
+Backend API：https://你的 API 網域
+```
+
+正式 domain 確認後，請在 Coolify 設定：
 
 ```text
 DATABASE_URL=正式 PostgreSQL 連線字串
 DEVICE_API_TOKEN=正式硬體上傳 token
-CORS_ORIGIN=https://App 或後台網域
-APP_PUBLIC_URL=https://固定 API domain
+CORS_ORIGIN=https://你的 APP 網域
+APP_PUBLIC_URL=https://你的 API 網域
 APP_JWT_SECRET=正式 APP JWT secret，至少 32 字元
 APP_ACCESS_TOKEN_TTL_SECONDS=900
 APP_REFRESH_TOKEN_TTL_DAYS=30
+APP_INVITE_CODE=Smart_Home
 MQTT_BROKER_URL=mqtt://你的 MQTT broker:1883
 MQTT_USERNAME=正式 MQTT 帳號或留空
 MQTT_PASSWORD=正式 MQTT 密碼或留空
 MQTT_TOPIC_PREFIX=smart-home
+AI_ENABLED=true
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=https://你的 AI endpoint
+AI_API_KEY=正式 AI key
+AI_MODEL=gpt-5.4
 ```
+
+不要在正式環境使用 `.env.example` 的本地預設 `DEVICE_API_TOKEN`、`APP_JWT_SECRET` 或資料庫密碼。
 
 ## 常見問題
 

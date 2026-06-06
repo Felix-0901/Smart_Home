@@ -34,6 +34,7 @@ const envSchema = z.object({
   APP_JWT_SECRET: z.string().min(32).default("local-dev-app-jwt-secret-change-me-32chars"),
   APP_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   APP_REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive().default(30),
+  APP_INVITE_CODE: z.string().min(1).default("Smart_Home"),
   MQTT_ENABLED: booleanFromEnv.default(true),
   MQTT_BROKER_URL: z.string().url().default("mqtt://localhost:1883"),
   MQTT_USERNAME: optionalNonEmptyString,

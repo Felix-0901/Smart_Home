@@ -193,3 +193,11 @@ export type HomiHistoryResponse = {
   month: string;
   messages: HomiHistoryMessage[];
 };
+
+export type InviteRedeemResponse = {
+  ok: true;
+  inviteCode: string;
+  alreadyRedeemed: boolean;
+  deviceCount: number;
+  devices: Device[];
+};

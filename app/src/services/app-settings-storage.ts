@@ -1,34 +1,34 @@
-import * as SecureStore from "expo-secure-store";
 import type { DeviceGroupMode } from "../features/devices/device-groups";
+import { getPersistentItem, setPersistentItem } from "./persistent-storage";
 
 const developerModeKey = "smart_home_developer_mode";
 const deviceGroupModeKey = "smart_home_device_group_mode";
 const homeRelayOrderKeyPrefix = "smart_home_home_relay_order";
 
 export async function saveDeveloperMode(enabled: boolean) {
-  await SecureStore.setItemAsync(developerModeKey, enabled ? "true" : "false");
+  await setPersistentItem(developerModeKey, enabled ? "true" : "false");
 }
 
 export async function getStoredDeveloperMode() {
-  const value = await SecureStore.getItemAsync(developerModeKey);
+  const value = await getPersistentItem(developerModeKey);
   return value === "true";
 }
 
 export async function saveDeviceGroupMode(mode: DeviceGroupMode) {
-  await SecureStore.setItemAsync(deviceGroupModeKey, mode);
+  await setPersistentItem(deviceGroupModeKey, mode);
 }
 
 export async function getStoredDeviceGroupMode(): Promise<DeviceGroupMode> {
-  const value = await SecureStore.getItemAsync(deviceGroupModeKey);
+  const value = await getPersistentItem(deviceGroupModeKey);
   return value === "space" ? "space" : "series";
 }
 
 export async function saveHomeRelayOrder(userId: string, deviceIds: string[]) {
-  await SecureStore.setItemAsync(`${homeRelayOrderKeyPrefix}_${userId}`, JSON.stringify(deviceIds));
+  await setPersistentItem(`${homeRelayOrderKeyPrefix}_${userId}`, JSON.stringify(deviceIds));
 }
 
 export async function getStoredHomeRelayOrder(userId: string): Promise<string[]> {
-  const value = await SecureStore.getItemAsync(`${homeRelayOrderKeyPrefix}_${userId}`);
+  const value = await getPersistentItem(`${homeRelayOrderKeyPrefix}_${userId}`);
 
   if (!value) {
     return [];
