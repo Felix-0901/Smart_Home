@@ -116,8 +116,7 @@ export function HomiActionProvider({ children }: { children: ReactNode }) {
   const cursorX = useRef(new Animated.Value(width / 2 - homiCursorHotspotX)).current;
   const cursorY = useRef(new Animated.Value(height / 2 - homiCursorHotspotY)).current;
   const cursorOpacity = useRef(new Animated.Value(homiCursorPreviewMode ? 1 : 0)).current;
-  const cursorScale = useRef(new Animated.Value(homiCursorPreviewMode ? 1 : 0.82)).current;
-  const [isCursorVisible, setCursorVisible] = useState(homiCursorPreviewMode);
+  const cursorScale = useRef(new Animated.Value(homiCursorPreviewMode ? 1 : 0.01)).current;
   const [pendingDataQuery, setPendingDataQuery] = useState<HomiDataQueryCommand | null>(null);
   const [pendingDeviceSettings, setPendingDeviceSettings] = useState<HomiDeviceSettingsCommand | null>(null);
   const [pendingHomeRelayFocus, setPendingHomeRelayFocus] = useState<HomiHomeRelayFocusCommand | null>(null);
@@ -144,8 +143,7 @@ export function HomiActionProvider({ children }: { children: ReactNode }) {
     }
 
     cursorOpacity.setValue(0);
-    cursorScale.setValue(0.82);
-    setCursorVisible(false);
+    cursorScale.setValue(0.01);
   }, [cursorOpacity, cursorScale, cursorX, cursorY, height, width]);
 
   const registerTarget = useCallback((
@@ -246,7 +244,7 @@ export function HomiActionProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setCursorVisible(true);
+      cursorScale.setValue(1);
       await animateValue(cursorOpacity, 1, 120, Easing.out(Easing.quad));
 
       for (const hint of hints) {
@@ -277,7 +275,7 @@ export function HomiActionProvider({ children }: { children: ReactNode }) {
     }
 
     await animateValue(cursorOpacity, 0, 180, Easing.out(Easing.quad));
-    setCursorVisible(false);
+    cursorScale.setValue(0.01);
   }, [cursorOpacity, cursorScale, cursorX, cursorY, height, width]);
 
   const executeAction = useCallback(
@@ -600,24 +598,22 @@ export function HomiActionProvider({ children }: { children: ReactNode }) {
   return (
     <HomiActionContext.Provider value={value}>
       {children}
-      {homiCursorPreviewMode || isCursorVisible ? (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.cursor,
-            {
-              opacity: homiCursorPreviewMode ? 1 : cursorOpacity,
-              transform: [
-                { translateX: homiCursorPreviewMode ? previewCursorX : cursorX },
-                { translateY: homiCursorPreviewMode ? previewCursorY : cursorY },
-                { scale: homiCursorPreviewMode ? 1 : cursorScale }
-              ]
-            }
-          ]}
-        >
-          <HomiPointerCursor />
-        </Animated.View>
-      ) : null}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.cursor,
+          {
+            opacity: homiCursorPreviewMode ? 1 : cursorOpacity,
+            transform: [
+              { translateX: homiCursorPreviewMode ? previewCursorX : cursorX },
+              { translateY: homiCursorPreviewMode ? previewCursorY : cursorY },
+              { scale: homiCursorPreviewMode ? 1 : cursorScale }
+            ]
+          }
+        ]}
+      >
+        <HomiPointerCursor />
+      </Animated.View>
       {toast ? <ToastBanner toast={toast} top={Math.max(insets.top + 10, spacing.lg)} /> : null}
     </HomiActionContext.Provider>
   );
